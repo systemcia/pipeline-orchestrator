@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ConsistencyCheckMergeOutput",
+  "description": "consistency-checker CCC-merge（并行合并语义冲突检测）的输出格式",
+  "type": "object",
+  "required": ["aligned", "issues", "tasks_checked"],
+  "properties": {
+    "aligned": { "type": "boolean" },
+    "issues": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tasks_checked": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "本次检查覆盖的 task ID 列表"
+    }
+  },
+  "additionalProperties": false
+}

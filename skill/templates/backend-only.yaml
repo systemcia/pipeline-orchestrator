@@ -1,0 +1,19 @@
+# 预制编排模板 — 纯后端开发
+# 适用：Go / Python / Java 等后端项目，无前端组件
+# 触发词：需求涉及"后端""API""服务端""接口开发"
+# 用途: $O init <name> <tasks> --template backend-only
+
+name: backend-only
+description: 纯后端开发，串行执行，全质量流程
+
+agents:
+  implement:
+    - agent: executor
+  review:
+    - agent: quality-reviewer
+
+phases: [0, 1, 2, 3, 4, 5]
+
+skip_steps: []
+
+gates: [after-propose]

@@ -1,0 +1,19 @@
+# 预制编排模板 — 普通 Bug 修复
+# 适用：非紧急缺陷修复，保留提案流程确保修复方向正确
+# 触发词：需求涉及"修复""bug""缺陷""fix""问题修复"
+# 用途: $O init <name> <tasks> --template bugfix
+
+name: bugfix
+description: 普通 Bug 修复，保留提案但简化质量门，跳过经验反哺
+
+agents:
+  implement:
+    - agent: executor
+  review:
+    - agent: quality-reviewer
+
+phases: [0, 1, 2, 3, 4]
+
+skip_steps: [quality-gate-a, snapshot, regression-test]
+
+gates: [after-propose]

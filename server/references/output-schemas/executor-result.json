@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecutorResult",
+  "description": "executor 执行结果的结构化输出（Markdown 头部 + 结构化内容）",
+  "type": "object",
+  "required": ["result", "files_changed", "design_decisions"],
+  "properties": {
+    "result": { "type": "string", "enum": ["SUCCESS", "FAILED"] },
+    "files_changed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "action"],
+        "properties": {
+          "path": { "type": "string" },
+          "action": { "type": "string", "enum": ["added", "modified", "deleted"] }
+        }
+      }
+    },
+    "new_interfaces": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "design_decisions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "unresolved_issues": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

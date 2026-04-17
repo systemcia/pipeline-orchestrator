@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ConsistencyCheckOutput",
+  "description": "consistency-checker CCC-2 的输出格式",
+  "type": "object",
+  "required": ["aligned", "issues"],
+  "properties": {
+    "aligned": { "type": "boolean" },
+    "issues": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

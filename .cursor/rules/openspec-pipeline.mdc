@@ -1,0 +1,32 @@
+---
+description: 本仓库 OpenSpec change 与 Pipeline 编排约定（目录结构、CLI、与 $O 分工）
+globs: openspec/**,.cursor/skills/openspec-*/**,references/openspec-integration.md
+alwaysApply: false
+---
+
+# OpenSpec + Pipeline Orchestrator
+
+## 职责边界
+
+- **OpenSpec**：`proposal` / `design` / `specs/**/spec.md` / `tasks.md` 等内容与变更契约；优先用 `openspec` CLI 创建与查询 change（见 `references/openspec-integration.md`）。
+- **$O（orchestrate.sh）**：session 状态、task DAG、日志与质量门记录；**不**用其替代 OpenSpec 的 spec 正文编写。
+- **原则**：OpenSpec 管内容与任务拆解，optimization-master / 测试 Skill 管质量门，管理台管数据，$O 管执行态（与根目录 `SKILL.md` 一致）。**OpenSpec `tasks.md` 与 `$O` session 的主从与校验** → `references/openspec-integration.md`「OpenSpec 与 `$O` 主从关系」。
+
+## 修改制品时（MUST）
+
+1. **先探测**：`openspec/config.yaml` 是否存在用命令确认，勿凭记忆假设（见 `references/openspec-integration.md` 前置检查）。
+2. **保持 change 结构**：每个 change 目录保留 `proposal.md`、`design.md`、`tasks.md`、`specs/<capability>/spec.md`、`.openspec.yaml`；新增 capability 时同步目录与 tasks 引用。
+3. **tasks 与 spec 对齐**：`tasks.md` 勾选状态与实现进度一致；归档前须满足 `openspec status` 所反映的完成度（再走 archive Skill）。
+4. **最小改动**：只改本 change 范围内文件；不「顺手」改其他 change、不删历史 `archive/` 记录。
+5. **SubAgent**：编排场景下 spawn **禁止**指定 `model`，须继承主 Agent（见根目录 `SKILL.md` 强制约束）。
+
+## 反模式（NEVER）
+
+- 跳过 `openspec new` / `instructions` 约定，在 `openspec/changes/` 下随意手写目录却缺少 `.openspec.yaml` 或与 CLI 状态脱节。
+- 把业务实现大段写进 rule/skill，而应在对应 `spec.md` / `design.md` 落契约与方案。
+- 未经验证或未完成 tasks 即移动/归档 change。
+
+## 快速引用
+
+- CLI 与 Phase 对应：`references/openspec-integration.md`
+- 编排入口与命令：`SKILL.md`、`scripts/orchestrate.sh`

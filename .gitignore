@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.js.map
+tsconfig.tsbuildinfo
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+!.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session data (runtime)
+/sessions/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Lock files (runtime)
+*.lock
+!package-lock.json
+!pnpm-lock.yaml
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Compiled binary (legacy Go server)
+server.bak/po-server
+
+# Logs
+*.log
+
+# Playwright
+.playwright-mcp/
+
+# Sensitive local files (not for public repo)
+.cursor/rules/user-profile.mdc
+openspec/

@@ -1,0 +1,4 @@
+# Pipeline Orchestrator - Python dependencies
+# Core engine (scripts/engine.py) uses only stdlib, PyYAML is optional but recommended.
+
+PyYAML>=6.0    # YAML config / topology validation / template generation

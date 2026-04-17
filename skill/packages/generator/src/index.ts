@@ -1,0 +1,2 @@
+/** Generator package 占位入口（后续 task 实现）。 */
+export const PIPELINE_GENERATOR_PLACEHOLDER = "@pipeline/generator";

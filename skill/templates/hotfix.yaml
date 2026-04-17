@@ -1,0 +1,21 @@
+# 预制编排模板 — 线上紧急修复
+# 适用：生产环境紧急问题，需要最快速度修复上线
+# 触发词：需求涉及"紧急""hotfix""urgent""线上问题""生产故障"
+# 用途: $O init <name> <tasks> --template hotfix
+
+name: hotfix
+description: 线上紧急修复，跳过提案和经验反哺，无 Gate，强制串行
+
+agents:
+  implement:
+    - agent: executor
+  review:
+    - agent: quality-reviewer
+
+phases: [0, 2, 3, 4]
+
+skip_steps: [rag-inject, ccc-2, quality-gate-a, quality-gate-b, snapshot, e2e-test]
+
+gates: []
+
+force_serial: true

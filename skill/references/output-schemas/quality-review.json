@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QualityReviewOutput",
+  "description": "quality-reviewer / quality-reviewer-delta 的输出格式",
+  "type": "object",
+  "required": ["items", "summary"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "result"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[CSETMAP]\\d{2}$", "description": "检查项 ID，如 C01/S01/E01/T01/M01/A01/P01" },
+          "result": { "type": "string", "enum": ["PASS", "FAIL", "N/A"] },
+          "evidence": { "type": "string", "description": "FAIL 时必填：file:line + 说明；N/A 时填不适用理由" }
+        }
+      },
+      "minItems": 1
+    },
+    "summary": { "type": "string", "enum": ["PASS", "FAIL"] }
+  },
+  "additionalProperties": false
+}

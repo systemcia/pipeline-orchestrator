@@ -1,0 +1,19 @@
+# 预制编排模板 — 重构 / 技术债清理
+# 适用：代码重构、模块拆分、技术债还债、架构调整
+# 触发词：需求涉及"重构""refactor""技术债""清理""架构调整"
+# 用途: $O init <name> <tasks> --template refactor
+
+name: refactor
+description: 重构/技术债，全质量流程 + 实现后额外 Gate 确保不引入回归
+
+agents:
+  implement:
+    - agent: executor
+  review:
+    - agent: quality-reviewer
+
+phases: [0, 1, 2, 3, 4, 5]
+
+skip_steps: []
+
+gates: [after-propose, after-implement]

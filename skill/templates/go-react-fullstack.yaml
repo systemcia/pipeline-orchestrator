@@ -1,0 +1,25 @@
+# 预制编排模板 — Go + React 全栈并行
+# 适用：Go 后端 + React/Vue 前端的全栈需求
+# 触发词：需求涉及"全栈""前后端""React""Vue""前端+后端"
+# 用途: $O init <name> <tasks> --template go-react-fullstack
+
+name: go-react-fullstack
+description: Go + React 全栈，前后端 executor 并行开发，统一 reviewer
+
+agents:
+  implement:
+    parallel:
+      - agent: executor
+        scope: "## Backend Tasks"
+        tags: [backend, go]
+      - agent: executor
+        scope: "## Frontend Tasks"
+        tags: [frontend, react, typescript]
+  review:
+    - agent: quality-reviewer
+
+phases: [0, 1, 2, 3, 4, 5]
+
+skip_steps: []
+
+gates: [after-propose]

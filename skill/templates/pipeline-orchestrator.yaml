@@ -1,0 +1,396 @@
+# Pipeline Orchestrator 项目配置
+# 放置在项目根目录 .pipeline-orchestrator.yaml
+
+# 最大并行 SubAgent 数（同批 READY task 内）
+max_parallel: 3
+
+# 并行原子性策略
+# best-effort: 并行 task 独立处理，部分成功部分失败互不影响（默认）
+# all-or-nothing: 并行批次中任一 task 失败则全部回退（适用于强耦合并行任务）
+parallel_atomicity: best-effort
+
+# SubAgent 超时预期（分钟），超时标记为 FAILED
+timeout_minutes: 10
+
+# 单 task 最大重试次数（1~3），个人不计成本使用建议 2~3
+max_task_retries: 1
+
+# 额外 Skill 扫描目录（除默认的项目级/全局目录外）
+skill_scan_dirs: []
+  # - /path/to/your/custom-skills/
+
+# Skill 选择总序（详见 references/skill-routing-table.md）：
+#   task 显式 skill > skill_routes（本列表首条命中）> custom_routes > 内置 skill-routing-table.md > 无
+#
+# 结构化路由（有序列表，第一条匹配生效）
+skill_routes: []
+  # - task_id_prefix: "t-sql"
+  #   skill: sql-audit-guide
+  # - openspec_task_id_prefix: "3."
+  #   skill: openspec-apply-change
+
+# 自定义任务类型到 Skill 的路由扩展（关键词 → Skill，优先级低于 skill_routes）
+custom_routes:
+  # troubleshooting: my-troubleshooting
+  # deploy: deploy-helper
+
+# 小需求是否持久化状态（默认否，小需求通常不需要断点续传）
+persist_small: false
+
+# 中需求是否在引擎侧倾向创建 git 快照（须与 SKILL.md「规模裁剪矩阵」一致）
+# 矩阵规定：中规模 Phase 3 snapshot 为「跳过」→ 默认 false。若改为 true，须同步改矩阵与 references/snapshot-ops.md
+snapshot_medium: false
+
+# 自动化等级（0–3），与 gate_mode 正交；缺省按 2 处理。
+# 语义见 references/governance-constitution.md
+# 0=仅提案/探索（Phase 0+1，不进入实施）
+# 1=实现+确定性门（跳过 CCC/质量门B/回归测试）
+# 2=默认全链路（按规模裁剪矩阵执行全部步骤）
+# 3=高质量+倾向人工（thorough profile + interactive gate_mode）
+# 注：引擎 (engine.py) 不读取此字段，它作为编排层 Profile 选择的辅助参考。
+# tier 0 → 等效 dry_run:true；tier 3 → 编排层自动选择 thorough profile + interactive。
+automation_tier: 2
+
+# Gate 行为模式
+# auto: 自动巡航 — 质量门/测试门自动判断，决策写 pending.md，最终统一呈现（默认）
+# interactive: 交互式 — 在关键质量节点暂停，向用户展示选项（通过/要求修复/放弃）
+gate_mode: auto
+
+# 可选：性能基准测试命令（配置后在 Phase 3 后置检查中执行）
+# benchmark_cmd: "go test -bench=. -benchtime=1s ./..."
+
+# Dry-Run 模式（仅执行 Phase 0+1 预览，不实施）
+dry_run: false
+
+# ── 编排 Profiles ─────────────────────────────────────────────
+# 每个 profile 声明该场景下的阶段裁剪策略。
+# Phase 0c 规模判定后，orchestrator 按 scale 选择对应 profile；
+# 用户也可通过需求关键词（如"紧急修复"）触发指定 profile。
+# 未命中任何 profile 时使用 default。
+#
+# 字段说明：
+#   skip_phases:      跳过的 Phase 列表（Phase 0/3/4 不可跳过）
+#   skip_steps:       跳过的步骤 ID 列表（细粒度裁剪）
+#   gates:            Gate 检查点列表（覆盖默认 Gate 位置）
+#   force_serial:     强制串行执行（禁用并行 spawn）
+profiles:
+  default:
+    # 中/大规模默认：全流程
+    skip_phases: []
+    skip_steps: []
+    gates: [after-propose]
+
+  small:
+    # 小规模：跳过探索/提案/经验反哺
+    skip_phases: [1, 5]
+    skip_steps: [rag-inject, ccc-2, quality-gate-a, quality-gate-b, snapshot, e2e-test]
+    gates: []
+
+  hotfix:
+    # 紧急修复：最小流程，跳过探索/提案/经验反哺/CCC/质量门A
+    # 触发词：需求包含"紧急""hotfix""urgent""线上问题"
+    skip_phases: [1, 5]
+    skip_steps: [rag-inject, ccc-2, quality-gate-a, quality-gate-b, snapshot, e2e-test, unit-test]
+    gates: []
+    force_serial: true
+
+  thorough:
+    # 大规模+高质量要求：全流程 + 额外检查
+    # 触发词：需求包含"全面""thorough""高质量"
+    skip_phases: []
+    skip_steps: []
+    gates: [after-propose, after-implement, after-review]
+
+# ── 编排拓扑声明（机器可校验的 Phase 骨架）──────────────────
+# 补充层：Phase Markdown 文件是 LLM 的详细执行指令，topology 是引擎的校验骨架。
+# 用途：$O validate-topology 校验编排流转合法性、Gate 位置、SubAgent 路由。
+# 详见 references/topology.md
+topology:
+  phases:
+    - id: 0
+      name: bootstrap
+      file: phases/phase-0-bootstrap.md
+      required: true            # 所有规模必须执行
+      steps:
+        - id: env-check
+          type: shell
+          description: "python3 + 管理台 + 项目规则检测"
+        - id: session-check
+          type: shell
+          description: "检查已有 session，决定继续或新建"
+        - id: scale-detect
+          type: decision
+          description: "规模判定（小/中/大）"
+          outputs: [small, medium, large]
+        - id: profile-select
+          type: decision
+          description: "Profile 选择"
+      transitions:
+        - to: 1
+          condition: "scale in [medium, large]"
+        - to: 2
+          condition: "scale == small"
+
+    - id: 1
+      name: propose
+      file: phases/phase-1-propose.md
+      required: false           # 小规模跳过
+      skip_when: "scale == small OR 1 in profile.skip_phases"
+      steps:
+        - id: mode-select
+          type: decision
+          description: "增强编排 vs OpenSpec 模式"
+        - id: rag-search
+          step_id: rag-inject   # 对应规模裁剪矩阵的 Step ID
+          type: shell
+          description: "RAG 预搜索"
+          optional: true
+        - id: explore
+          type: task
+          agent: codebase-researcher
+          description: "代码库探索（可选）"
+          optional: true
+        - id: task-decompose
+          type: task
+          agent: planner
+          description: "需求拆解与提案"
+        - id: quality-gate-a-lite
+          step_id: quality-gate-a-lite
+          type: task
+          agent: evaluator
+          description: "轻量提案检查（中/大规模，5 条核心检查项）"
+          gate_type: soft
+          skip_when: "scale == small"
+        - id: quality-gate-a
+          step_id: quality-gate-a
+          type: task
+          agent: evaluator
+          description: "质量门 A 提案自检（大规模全量检查）"
+          gate_type: soft
+          skip_when: "scale != large"
+        - id: user-approval
+          type: gate
+          gate_id: after-propose
+          description: "用户审批提案"
+          required: true        # 所有 gate_mode 下均为必停点
+      transitions:
+        - to: 2
+
+    - id: 2
+      name: session
+      file: phases/phase-2-session.md
+      required: true
+      steps:
+        - id: create-session
+          type: shell
+          description: "$O init 创建 session"
+        - id: inject-context
+          type: shell
+          description: "注入用户需求 + 约束 + RAG"
+        - id: transition-gate
+          type: shell
+          description: "$O validate 前置校验"
+      transitions:
+        - to: 3
+
+    - id: 3
+      name: execute
+      file: phases/phase-3-execute.md
+      required: true
+      steps:
+        - id: next-loop
+          type: shell
+          description: "$O next 查询可执行 task"
+          loop: true
+        - id: rag-inject
+          step_id: rag-inject
+          type: shell
+          description: "RAG 注入"
+        - id: skill-route
+          type: shell
+          description: "$O skill-route 确定 Skill + $O start"
+        - id: spawn-executor
+          type: task
+          agent: executor
+          description: "spawn SubAgent 执行 task"
+          parallel_eligible: true
+        - id: output-verify
+          type: shell
+          description: "d-0 产出校验（PRE_SHA 对比）"
+          gate_type: hard
+        - id: dep-install
+          type: shell
+          description: "O9 依赖探测与安装"
+          gate_type: soft
+        - id: compile-check
+          step_id: compile
+          type: shell
+          description: "编译检查"
+          gate_type: hard
+        - id: lint-check
+          type: shell
+          description: "O10 Lint 静态分析"
+          gate_type: hard
+        - id: unit-test
+          step_id: unit-test
+          type: shell
+          description: "单元测试"
+          gate_type: hard
+        - id: regression-test
+          step_id: regression-test
+          type: shell
+          description: "增量回归测试"
+          gate_type: soft
+          skip_when: "scale != large"
+        - id: ccc-2
+          step_id: ccc-2
+          type: task
+          agent: consistency-checker
+          description: "CCC-2 task 一致性校验"
+          gate_type: soft
+        - id: quality-gate-b
+          step_id: quality-gate-b
+          type: task
+          agent: quality-reviewer
+          description: "质量门 B task 级审查"
+          gate_type: soft
+        - id: snapshot
+          step_id: snapshot
+          type: shell
+          description: "git 快照"
+        - id: mark-done
+          type: shell
+          description: "$O done/fail 标记状态"
+        - id: update-context
+          type: shell
+          description: "$O update-session 更新上下文"
+        - id: context-reset-check
+          type: decision
+          description: "context_usage >= 15 时建议 Reset"
+      transitions:
+        - to: 4
+          condition: "ALL_DONE"
+
+    - id: 4
+      name: complete
+      file: phases/phase-4-complete.md
+      required: true
+      steps:
+        - id: e2e-test
+          step_id: e2e-test
+          type: task
+          description: "E2E 测试"
+          gate_type: soft
+        - id: quality-gate-c
+          type: task
+          agent: quality-reviewer
+          description: "质量门 C 全局审查"
+          gate_type: soft
+          gate_id: after-review
+        - id: summary
+          type: shell
+          description: "执行总结展示"
+        - id: final-validate
+          type: shell
+          description: "$O validate 最终校验"
+        - id: complete-session
+          type: shell
+          description: "$O complete 标记完成"
+        - id: archive
+          type: task
+          description: "OpenSpec 归档（OpenSpec 模式时）"
+          optional: true
+      transitions:
+        - to: 5
+          condition: "scale in [medium, large]"
+
+    - id: 5
+      name: feedback
+      file: phases/phase-5-feedback.md
+      required: false
+      skip_when: "scale == small OR 5 in profile.skip_phases"
+      steps:
+        - id: experience-summary
+          type: task
+          agent: session-analyst
+          description: "会话经验总结与改进建议"
+        - id: trend
+          type: shell
+          description: "趋势追踪"
+          optional: true
+
+  # SubAgent 角色注册表（与 .cursor/agents/*.md 对齐）
+  agents:
+    - id: planner
+      file: .cursor/agents/planner.md
+      phases: [1]
+      tools_budget: 10
+    - id: executor
+      file: .cursor/agents/executor.md
+      phases: [3]
+      tools_budget: 30
+    - id: evaluator
+      file: .cursor/agents/evaluator.md
+      phases: [1]
+      tools_budget: 20
+    - id: consistency-checker
+      file: .cursor/agents/consistency-checker.md
+      phases: [3]
+      tools_budget: 10
+    - id: quality-reviewer
+      file: .cursor/agents/quality-reviewer.md
+      phases: [3, 4]
+      tools_budget: 20
+    - id: error-fixer
+      file: .cursor/agents/error-fixer.md
+      phases: [3, 4]
+      tools_budget: 15
+      on_demand: true           # 仅在 Gate FAIL 后由编排层按需调用
+    - id: codebase-researcher
+      file: .cursor/agents/codebase-researcher.md
+      phases: [1]
+      tools_budget: 10
+    - id: tester
+      file: .cursor/agents/tester.md
+      phases: [3]
+      tools_budget: 20
+      on_demand: true           # task-type: test 时由编排层路由，替代 executor
+    - id: session-analyst
+      file: .cursor/agents/session-analyst.md
+      phases: [5]
+      tools_budget: 30
+      on_demand: true           # 按需触发：用户说"分析 harness"或"优化 agent 配置"时手动调用
+
+  # Gate 注册表（与 profiles.gates 对齐）
+  gates:
+    - id: after-propose
+      phase: 1
+      step: user-approval
+      required_modes: [auto, interactive]  # 所有模式必停
+    - id: after-implement
+      phase: 3
+      step: quality-gate-b
+      description: "实现后审查（仅 thorough profile）"
+      required_modes: [interactive]
+    - id: after-review
+      phase: 4
+      step: quality-gate-c
+      required_modes: [interactive]
+
+# --- 编排模板系统 ---
+# 模板是 profile 的超集，定义完整的编排蓝图（agents + phases + skip_steps + gates）
+# 使用: $O init <name> <tasks> --template <name>
+# 生成: $O gen-template --name <name> --desc "描述"
+#
+# 预制模板（templates/ 目录）:
+#   backend-only:          纯后端开发，串行执行，全质量流程
+#   go-react-fullstack:    Go+React 全栈，前后端 executor 并行，统一 reviewer
+#   hotfix:                线上紧急修复，跳过提案/反哺，无 Gate，强制串行
+#   bugfix:                普通 Bug 修复，保留提案但简化质量门
+#   refactor:              重构/技术债，全流程 + 实现后额外 Gate
+#
+# 自定义: $O gen-template 或在 templates/ 目录手工创建 <name>.yaml
+templates:
+  search_paths:
+    - templates/
+  merge_priority: template > profile > default

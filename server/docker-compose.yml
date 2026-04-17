@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  server:
+    build: .
+    ports:
+      - "${PIPELINE_SERVER_PORT:-18000}:18000"
+    volumes:
+      - sessions:/data/sessions
+    environment:
+      - NODE_ENV=production
+      - PIPELINE_SESSIONS_DIR=/data/sessions
+      - PIPELINE_SERVER_PORT=18000
+    restart: unless-stopped
+
+volumes:
+  sessions:

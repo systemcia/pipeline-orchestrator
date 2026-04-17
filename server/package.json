@@ -1,0 +1,11 @@
+{
+  "name": "pipeline-orchestrator",
+  "private": true,
+  "workspaces": ["packages/*", "web"],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev": "node packages/server/dist/main.js & npm run dev -w web & wait",
+    "dev:server": "node packages/server/dist/main.js",
+    "dev:web": "npm run dev -w web"
+  }
+}
