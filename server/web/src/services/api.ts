@@ -168,6 +168,10 @@ export const ragSearch = (q: string, limit = 5) =>
 export const getLessons = (id: string) => request<string>(`/api/sessions/${id}/lessons`);
 export const getImprovements = (id: string) => request<string>(`/api/sessions/${id}/improvements`);
 
+// Requirement Tracking
+export const getAnalysisTrace = (id: string) => request<string>(`/api/sessions/${id}/analysis-trace`);
+export const getDesignBrief = (id: string) => request<string>(`/api/sessions/${id}/design-brief`);
+
 // Pipeline Trend
 export interface FailedTaskDetail {
   session_id: string; session_name: string;

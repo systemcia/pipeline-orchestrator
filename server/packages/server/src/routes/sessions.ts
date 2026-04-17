@@ -123,6 +123,26 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     }
   });
 
+  app.get('/sessions/:id/analysis-trace', async (req, reply) => {
+    try {
+      const { id } = req.params as { id: string };
+      const content = await svc.readSessionFile(id, 'analysis-trace.md');
+      return sendOk(reply, content);
+    } catch (e) {
+      return sendError(reply, 500, e);
+    }
+  });
+
+  app.get('/sessions/:id/design-brief', async (req, reply) => {
+    try {
+      const { id } = req.params as { id: string };
+      const content = await svc.readSessionFile(id, 'design-brief.md');
+      return sendOk(reply, content);
+    } catch (e) {
+      return sendError(reply, 500, e);
+    }
+  });
+
   const validateHandler = async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     try {
       const { id } = req.params as { id: string };

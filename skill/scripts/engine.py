@@ -405,11 +405,17 @@ def cmd_init(args):
     (session_dir / "logs").mkdir(exist_ok=True)
     (session_dir / "snapshots").mkdir(exist_ok=True)
 
+    # 第一遍：构建 name→id 映射（用于 depends_on 规范化）
+    name_to_id: dict[str, str] = {}
+    for i, t in enumerate(tasks_raw):
+        tid = t.get("id", f"t{i + 1}")
+        name_to_id[t["name"]] = tid
+
     tasks = []
     for i, t in enumerate(tasks_raw):
         tid = t.get("id", f"t{i + 1}")
         if "depends_on" in t and t["depends_on"] is not None:
-            deps = t["depends_on"]
+            deps = [name_to_id.get(d, d) for d in t["depends_on"]]
         elif i > 0:
             deps = [tasks[i - 1]["id"]]
         else:

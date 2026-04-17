@@ -12,6 +12,7 @@ import dayjs from 'dayjs';
 import {
   getSession, getSessionMD, getSnapshots, getLogs,
   validateSession, getLessons, getImprovements,
+  getAnalysisTrace, getDesignBrief,
 } from '@/services/api';
 import type { ValidationResult } from '@/services/api';
 import { usePipelineEvents } from '@/services/websocket';
@@ -35,13 +36,15 @@ export default function SessionDetail() {
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [lessonsMd, setLessonsMd] = useState('');
   const [improvementsMd, setImprovementsMd] = useState('');
+  const [analysisTrace, setAnalysisTrace] = useState('');
+  const [designBrief, setDesignBrief] = useState('');
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [s, md, snaps, logList, v, lessons, improvements] = await Promise.all([
+      const [s, md, snaps, logList, v, lessons, improvements, trace, brief] = await Promise.all([
         getSession(id),
         getSessionMD(id),
         getSnapshots(id),
@@ -49,6 +52,8 @@ export default function SessionDetail() {
         validateSession(id),
         getLessons(id).catch(() => ''),
         getImprovements(id).catch(() => ''),
+        getAnalysisTrace(id).catch(() => ''),
+        getDesignBrief(id).catch(() => ''),
       ]);
       setSession(s);
       setSessionMd(md);
@@ -57,6 +62,8 @@ export default function SessionDetail() {
       setValidation(v);
       setLessonsMd(lessons || '');
       setImprovementsMd(improvements || '');
+      setAnalysisTrace(trace || '');
+      setDesignBrief(brief || '');
     } catch {
       message.error('加载会话详情失败');
     } finally {
@@ -219,6 +226,20 @@ export default function SessionDetail() {
         <Table rowKey="name" dataSource={logs} columns={logColumns} pagination={false} size="small" />
       ) : (
         <Alert type="warning" message="暂无执行日志" showIcon />
+      ),
+    },
+    {
+      key: 'analysis-trace',
+      label: '需求追踪',
+      children: analysisTrace ? <MarkdownViewer content={analysisTrace} /> : (
+        <Alert type="info" message="无需求分析追踪（小规模或未执行 Phase 1）" showIcon />
+      ),
+    },
+    {
+      key: 'design-brief',
+      label: '设计简报',
+      children: designBrief ? <MarkdownViewer content={designBrief} /> : (
+        <Alert type="info" message="无设计简报（小规模或 OpenSpec 模式）" showIcon />
       ),
     },
     {
