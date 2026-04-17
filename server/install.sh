@@ -94,10 +94,13 @@ info "创建 Session 目录: $SESSIONS_DIR"
 mkdir -p "$SESSIONS_DIR"
 
 # ── 6. 写入环境变量 ──────────────────────────────────────────
+SKILL_DIR="$(cd "$REPO_DIR/../skill" 2>/dev/null && pwd || echo "")"
+
 ENV_BLOCK="
 # >>> pipeline-orchestrator-server >>>
-export PIPELINE_ORCHESTRATOR_HOME=\"$REPO_DIR\"
+export PIPELINE_ORCHESTRATOR_HOME=\"${SKILL_DIR:-$REPO_DIR}\"
 export PIPELINE_SESSIONS_DIR=\"$SESSIONS_DIR\"
+export PIPELINE_DATA_DB=\"$SESSIONS_DIR/pipeline.db\"
 # <<< pipeline-orchestrator-server <<<"
 
 write_env_to() {

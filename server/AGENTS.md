@@ -18,20 +18,19 @@
 
 | 目录/文件 | 说明 |
 |-----------|------|
-| `SKILL.md` | 编排主入口（Phase 路由 + 规模矩阵 + 命令速查） |
-| `phases/*.md` | 各 Phase 详细执行步骤 |
-| `.cursor/agents/*.md` | 9 个 SubAgent 角色定义（planner/executor/evaluator/session-analyst 等） |
-| `references/` | 协议、清单、模板、格式定义（protocols/quality-checklist 等） |
-| `templates/` | 项目配置模板 |
-| `scripts/` | 引擎脚本（orchestrate.sh / engine.py / topology.py） |
+| `SKILL.md` | 编排主入口（与 skill/SKILL.md 同步） |
+| `packages/server/` | Fastify 后端 API |
+| `packages/shared/` | 共享类型定义 |
 | `packages/generator/` | 声明式 Skill 生成器 |
-| `.cursor/skills/setup/` | 一键安装 Skill（探测环境 + 配置） |
-| `.cursor/commands/` | Cursor 命令（OpenSpec 快捷入口） |
+| `web/` | React + Ant Design 前端 |
+| `scripts/` | 引擎脚本 + 数据同步（sync/） |
+| `phases/` | Phase 执行步骤（server 侧副本） |
+| `references/` | 协议、清单（server 侧副本） |
+| `docs/` | 数据库 Schema、快速上手等文档 |
 
 ## 关键参考
 
-- 架构原则 → `SKILL.md`「架构定位」
-- 角色职责边界 → `references/governance-constitution.md`
-- SubAgent 协议 → `references/protocols.md`
-- 上下文注入策略 → `references/context-engineering.md`
-- 编排假设清单 → `references/assumptions.md`
+- API 路由 → `packages/server/src/routes/`
+- 数据库 Schema → `docs/database-schema.md`
+- Skill 侧 SubAgent 定义 → `../skill/.cursor/agents/*.md`
+- 编排协议 → `references/protocols.md`

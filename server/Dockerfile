@@ -24,8 +24,6 @@ COPY scripts/ scripts/
 COPY phases/ phases/
 COPY references/ references/
 COPY templates/ templates/
-COPY .cursor/agents/ .cursor/agents/
-COPY .cursor/skills/ .cursor/skills/
 COPY SKILL.md AGENTS.md README.md ./
 
 ENV NODE_ENV=production

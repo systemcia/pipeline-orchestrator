@@ -49,7 +49,7 @@ pip3 install -r requirements.txt      # Python 依赖
 npm install && npm run build           # Node.js 依赖 + 构建
 mkdir -p /opt/pipeline-orchestrator/sessions
 
-export PIPELINE_ORCHESTRATOR_HOME=$(pwd)
+export PIPELINE_ORCHESTRATOR_HOME=$(cd ../skill && pwd)
 export PIPELINE_SESSIONS_DIR=/opt/pipeline-orchestrator/sessions
 ```
 
@@ -104,7 +104,7 @@ python3 scripts/sync/sync_chats.py
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `PIPELINE_ORCHESTRATOR_HOME` | 自动探测 | 仓库根目录 |
+| `PIPELINE_ORCHESTRATOR_HOME` | 自动探测 | Skill 根目录（`../skill/`） |
 | `PIPELINE_SESSIONS_DIR` | `/opt/pipeline-orchestrator/sessions` | Session 数据目录 |
 | `PIPELINE_DATA_DB` | `$SESSIONS_DIR/pipeline.db` | 数据库路径 |
 | `PIPELINE_SERVER_PORT` | `18000` | 后端端口 |
@@ -127,10 +127,9 @@ python3 scripts/sync/sync_chats.py
 │   ├── orchestrate.sh       # 编排入口脚本
 │   ├── topology.py          # 拓扑分析
 │   └── sync/                # 数据同步脚本
-├── phases/                  # 6 个 Phase 执行步骤
-├── references/              # 协议、清单、上下文策略
+├── phases/                  # 6 个 Phase 执行步骤（server 侧副本）
+├── references/              # 协议、清单、上下文策略（server 侧副本）
 ├── templates/               # 配置模板
-├── .cursor/agents/          # 9 个 SubAgent 角色定义
 ├── docs/                    # 文档
 ├── Dockerfile
 ├── docker-compose.yml
