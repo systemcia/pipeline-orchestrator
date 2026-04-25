@@ -5,16 +5,18 @@ import {
   message, Tag, Alert, Progress, Tooltip,
 } from 'antd';
 import {
-  FileTextOutlined, WarningOutlined, CameraOutlined,
+  FileTextOutlined, WarningOutlined,
   ArrowLeftOutlined, SafetyCertificateOutlined, ReloadOutlined,
+  CheckCircleOutlined, ToolOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
   getSession, getSessionMD, getSnapshots, getLogs,
   validateSession, getLessons, getImprovements,
-  getAnalysisTrace, getDesignBrief,
+  getAnalysisTrace, getDesignBrief, completeSession,
+  getOpenSpecInfo, repairSessionDocs,
 } from '@/services/api';
-import type { ValidationResult } from '@/services/api';
+import type { ValidationResult, OpenSpecInfo } from '@/services/api';
 import { usePipelineEvents } from '@/services/websocket';
 import { SessionStatusTag, TaskStatusTag } from '@/components/StatusTag';
 import MarkdownViewer from '@/components/MarkdownViewer';
@@ -38,13 +40,17 @@ export default function SessionDetail() {
   const [improvementsMd, setImprovementsMd] = useState('');
   const [analysisTrace, setAnalysisTrace] = useState('');
   const [designBrief, setDesignBrief] = useState('');
+  const [openspecInfo, setOpenspecInfo] = useState<OpenSpecInfo | null>(null);
+  const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
+  const [repairing, setRepairing] = useState(false);
+  const [completing, setCompleting] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [s, md, snaps, logList, v, lessons, improvements, trace, brief] = await Promise.all([
+      const [s, md, snaps, logList, v, lessons, improvements, trace, brief, osInfo] = await Promise.all([
         getSession(id),
         getSessionMD(id),
         getSnapshots(id),
@@ -54,6 +60,7 @@ export default function SessionDetail() {
         getImprovements(id).catch(() => ''),
         getAnalysisTrace(id).catch(() => ''),
         getDesignBrief(id).catch(() => ''),
+        getOpenSpecInfo(id).catch(() => null),
       ]);
       setSession(s);
       setSessionMd(md);
@@ -64,6 +71,7 @@ export default function SessionDetail() {
       setImprovementsMd(improvements || '');
       setAnalysisTrace(trace || '');
       setDesignBrief(brief || '');
+      setOpenspecInfo(osInfo);
     } catch {
       message.error('加载会话详情失败');
     } finally {
@@ -89,8 +97,47 @@ export default function SessionDetail() {
   const completed = session.tasks?.filter(t => t.status === 'COMPLETED' || t.status === 'SKIPPED').length || 0;
   const failed = session.tasks?.filter(t => t.status === 'FAILED').length || 0;
   const running = session.tasks?.filter(t => t.status === 'RUNNING').length || 0;
+  const pending = session.tasks?.filter(t => t.status === 'PENDING').length || 0;
   const total = session.tasks?.length || 0;
   const pct = total > 0 ? Math.round(completed / total * 100) : 0;
+  const canComplete = session.status !== 'COMPLETED' && pending === 0 && running === 0;
+
+  const handleComplete = async () => {
+    if (!id || completing) return;
+    setCompleting(true);
+    try {
+      const res = await completeSession(id);
+      if (res.ok) {
+        message.success('会话已标记为完成');
+        fetchData();
+      } else {
+        message.error(res.message);
+      }
+    } catch {
+      message.error('操作失败');
+    } finally {
+      setCompleting(false);
+    }
+  };
+
+  const needsRepair = !analysisTrace || !designBrief;
+  const handleRepair = async () => {
+    if (!id || repairing) return;
+    setRepairing(true);
+    try {
+      const res = await repairSessionDocs(id);
+      if (res.repaired.length > 0) {
+        message.success(res.message);
+        fetchData();
+      } else {
+        message.info(res.message);
+      }
+    } catch {
+      message.error('补全失败');
+    } finally {
+      setRepairing(false);
+    }
+  };
 
   const taskColumns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
@@ -232,14 +279,24 @@ export default function SessionDetail() {
       key: 'analysis-trace',
       label: '需求追踪',
       children: analysisTrace ? <MarkdownViewer content={analysisTrace} /> : (
-        <Alert type="info" message="无需求分析追踪（小规模或未执行 Phase 1）" showIcon />
+        <Alert
+          type="info"
+          message="无需求分析追踪"
+          description={<Button size="small" icon={<ToolOutlined />} onClick={handleRepair} loading={repairing}>从 OpenSpec / 会话上下文补全</Button>}
+          showIcon
+        />
       ),
     },
     {
       key: 'design-brief',
       label: '设计简报',
       children: designBrief ? <MarkdownViewer content={designBrief} /> : (
-        <Alert type="info" message="无设计简报（小规模或 OpenSpec 模式）" showIcon />
+        <Alert
+          type="info"
+          message="无设计简报"
+          description={<Button size="small" icon={<ToolOutlined />} onClick={handleRepair} loading={repairing}>从 OpenSpec 补全</Button>}
+          showIcon
+        />
       ),
     },
     {
@@ -281,6 +338,12 @@ export default function SessionDetail() {
         <Button icon={<FileTextOutlined />} onClick={() => navigate(`/sessions/${id}/logs`)}>执行日志</Button>
         <Button icon={<WarningOutlined />} onClick={() => navigate(`/sessions/${id}/pending`)}>待确认项</Button>
         <Button icon={<ReloadOutlined />} onClick={fetchData}>刷新</Button>
+        {needsRepair && (
+          <Button icon={<ToolOutlined />} onClick={handleRepair} loading={repairing}>文档补全</Button>
+        )}
+        {canComplete && (
+          <Button type="primary" icon={<CheckCircleOutlined />} onClick={handleComplete} loading={completing}>完成会话</Button>
+        )}
       </Space>
 
       {validation && !validation.ok && (
@@ -309,7 +372,18 @@ export default function SessionDetail() {
             </Tag> : <span style={{ color: '#ccc' }}>-</span>}
           </Descriptions.Item>
           <Descriptions.Item label="模式">{session.mode || '标准'}</Descriptions.Item>
-          <Descriptions.Item label="OpenSpec">{session.openspecChange || <span style={{ color: '#ccc' }}>增强编排</span>}</Descriptions.Item>
+          <Descriptions.Item label="OpenSpec">
+            {openspecInfo ? (
+              <Space size={4}>
+                <a onClick={() => setActiveTab('analysis-trace')}>{openspecInfo.name}</a>
+                <Tag color={openspecInfo.status === 'archived' ? 'default' : 'blue'}>
+                  {openspecInfo.status === 'archived' ? '已归档' : '活跃'}
+                </Tag>
+              </Space>
+            ) : (
+              <span style={{ color: '#ccc' }}>增强编排</span>
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="进度">
             <Space>
               <Progress percent={pct} size="small" style={{ width: 80 }} status={failed > 0 ? 'exception' : undefined} />
@@ -337,7 +411,7 @@ export default function SessionDetail() {
       </Card>
 
       <Card>
-        <Tabs items={tabItems} />
+        <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
       </Card>
     </div>
   );

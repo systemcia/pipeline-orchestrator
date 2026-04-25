@@ -1,5 +1,5 @@
 import type { ValidationResult } from '@pipeline/shared';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 /** API 列表行形状（与 Go model.SessionSummary 的 JSON 标签一致）。 */
@@ -137,7 +137,7 @@ function recordToParsedState(raw: Record<string, unknown>): ParsedState {
 export class SessionFsService {
   constructor(private readonly root: string) {}
 
-  private async readStateRecordByRel(rel: string): Promise<Record<string, unknown>> {
+  async readStateByRel(rel: string): Promise<Record<string, unknown>> {
     const data = await readFile(join(this.root, rel, 'state.json'), 'utf8');
     const raw = JSON.parse(data) as Record<string, unknown>;
     normalizeStateRecord(raw, rel);
@@ -151,7 +151,7 @@ export class SessionFsService {
     for (const rel of rels) {
       let raw: Record<string, unknown>;
       try {
-        raw = await this.readStateRecordByRel(rel);
+        raw = await this.readStateByRel(rel);
       } catch {
         continue;
       }
@@ -161,9 +161,13 @@ export class SessionFsService {
     throw new Error(`session ${id} not found`);
   }
 
+  async collectSessionRelPaths(): Promise<string[]> {
+    return collectSessionRelPaths(this.root);
+  }
+
   async readState(id: string): Promise<ParsedState> {
     const rel = await this.findSessionRelPath(id);
-    const raw = await this.readStateRecordByRel(rel);
+    const raw = await this.readStateByRel(rel);
     return recordToParsedState(raw);
   }
 
@@ -172,7 +176,7 @@ export class SessionFsService {
     const v = validateID(id);
     if (v) throw v;
     const rel = await this.findSessionRelPath(id);
-    return this.readStateRecordByRel(rel);
+    return this.readStateByRel(rel);
   }
 
   async listSessions(project: string): Promise<SessionSummaryApi[]> {
@@ -186,7 +190,7 @@ export class SessionFsService {
     for (const rel of rels) {
       let raw: Record<string, unknown>;
       try {
-        raw = await this.readStateRecordByRel(rel);
+        raw = await this.readStateByRel(rel);
       } catch {
         continue;
       }
@@ -390,6 +394,39 @@ export class SessionFsService {
       return cfg as Record<string, unknown>;
     }
     return {};
+  }
+
+  async readFileByRel(rel: string, name: string): Promise<string> {
+    const fp = join(this.root, rel, name);
+    try {
+      return await readFile(fp, 'utf8');
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException;
+      if (err.code === 'ENOENT') return '';
+      throw new Error(`read ${name}: ${err.message}`);
+    }
+  }
+
+  /** 标记 session 为 COMPLETED（管理台手动触发）。 */
+  async completeSession(id: string): Promise<{ ok: boolean; message: string }> {
+    const rel = await this.findSessionRelPath(id);
+    const fp = join(this.root, rel, 'state.json');
+    const data = await readFile(fp, 'utf8');
+    const state = JSON.parse(data) as Record<string, unknown>;
+    const tasks = (state['tasks'] as Array<Record<string, unknown>>) ?? [];
+    const unfinished = tasks
+      .filter(t => t['status'] === 'PENDING' || t['status'] === 'RUNNING')
+      .map(t => String(t['id']));
+    if (unfinished.length > 0) {
+      return { ok: false, message: `尚有未完成的 task: ${unfinished.join(', ')}` };
+    }
+    if (state['status'] === 'COMPLETED') {
+      return { ok: true, message: '会话已经是 COMPLETED 状态' };
+    }
+    state['status'] = 'COMPLETED';
+    state['updated_at'] = new Date().toISOString();
+    await writeFile(fp, JSON.stringify(state, null, 2), 'utf8');
+    return { ok: true, message: 'session -> COMPLETED' };
   }
 }
 

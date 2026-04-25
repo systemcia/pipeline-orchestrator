@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { defaultSessionsRoot, SessionFsService } from './session-detail.js';
+import { SessionOpenSpecService } from './session-openspec.js';
 
 function sendError(reply: FastifyReply, code: number, err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
@@ -35,7 +36,9 @@ async function ensureProjectFilter(
 
 /** Session 文件系统 API，与 Go `handler.SessionHandler` + `service.SessionService` 行为对齐。 */
 export async function registerSessionRoutes(app: FastifyInstance): Promise<void> {
-  const svc = new SessionFsService(defaultSessionsRoot());
+  const sessRoot = defaultSessionsRoot();
+  const svc = new SessionFsService(sessRoot);
+  const osSvc = new SessionOpenSpecService(svc, sessRoot);
 
   app.get('/sessions', async (req, reply) => {
     try {
@@ -61,7 +64,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     try {
       const { id } = req.params as { id: string };
       const rel = await svc.findSessionRelPath(id);
-      const sessDir = join(defaultSessionsRoot(), rel);
+      const sessDir = join(sessRoot, rel);
       await rm(sessDir, { recursive: true, force: true });
       return sendOk(reply, { deleted: id });
     } catch (e) {
@@ -126,7 +129,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
   app.get('/sessions/:id/analysis-trace', async (req, reply) => {
     try {
       const { id } = req.params as { id: string };
-      const content = await svc.readSessionFile(id, 'analysis-trace.md');
+      const content = await osSvc.readAnalysisTrace(id);
       return sendOk(reply, content);
     } catch (e) {
       return sendError(reply, 500, e);
@@ -136,8 +139,39 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
   app.get('/sessions/:id/design-brief', async (req, reply) => {
     try {
       const { id } = req.params as { id: string };
-      const content = await svc.readSessionFile(id, 'design-brief.md');
+      const content = await osSvc.readDesignBrief(id);
       return sendOk(reply, content);
+    } catch (e) {
+      return sendError(reply, 500, e);
+    }
+  });
+
+  app.get('/sessions/:id/openspec-info', async (req, reply) => {
+    try {
+      const { id } = req.params as { id: string };
+      const info = await osSvc.getInfo(id);
+      return sendOk(reply, info);
+    } catch (e) {
+      return sendError(reply, 500, e);
+    }
+  });
+
+  app.post('/sessions/:id/repair-docs', async (req, reply) => {
+    try {
+      const { id } = req.params as { id: string };
+      const result = await osSvc.repairDocs(id);
+      return sendOk(reply, result);
+    } catch (e) {
+      return sendError(reply, 500, e);
+    }
+  });
+
+  app.post('/sessions/:id/complete', async (req, reply) => {
+    try {
+      const { id } = req.params as { id: string };
+      const result = await svc.completeSession(id);
+      if (!result.ok) return sendError(reply, 400, new Error(result.message));
+      return sendOk(reply, result);
     } catch (e) {
       return sendError(reply, 500, e);
     }
@@ -190,23 +224,22 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     }
   });
 
-  const sessionsRoot = defaultSessionsRoot();
   app.get('/config', async (_req, reply) => {
-    const configPath = resolve(join(sessionsRoot, '..', 'config.yaml'));
+    const configPath = resolve(join(sessRoot, '..', 'config.yaml'));
     try {
       const raw = await readFile(configPath, 'utf-8');
       return sendOk(reply, {
         raw,
         config_path: configPath,
         config_exists: true,
-        sessions_root: sessionsRoot,
+        sessions_root: sessRoot,
       });
     } catch (e: unknown) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
         return sendOk(reply, {
           max_parallel: 3,
           timeout_minutes: 10,
-          sessions_root: sessionsRoot,
+          sessions_root: sessRoot,
           config_path: configPath,
           config_exists: false,
         });

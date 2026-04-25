@@ -172,6 +172,25 @@ export const getImprovements = (id: string) => request<string>(`/api/sessions/${
 export const getAnalysisTrace = (id: string) => request<string>(`/api/sessions/${id}/analysis-trace`);
 export const getDesignBrief = (id: string) => request<string>(`/api/sessions/${id}/design-brief`);
 
+// OpenSpec Info
+export interface OpenSpecInfo {
+  name: string;
+  status: 'active' | 'archived';
+  hasProposal: boolean;
+  hasDesign: boolean;
+  hasTasks: boolean;
+}
+export const getOpenSpecInfo = (id: string) =>
+  request<unknown>(`/api/sessions/${id}/openspec-info`)
+    .then((raw) => raw ? keysToCamel<OpenSpecInfo>(raw) : null);
+
+// Session Repair & Complete
+export const repairSessionDocs = (id: string) =>
+  request<{ repaired: string[]; message: string }>(`/api/sessions/${id}/repair-docs`, { method: 'POST' });
+
+export const completeSession = (id: string) =>
+  request<{ ok: boolean; message: string }>(`/api/sessions/${id}/complete`, { method: 'POST' });
+
 // Pipeline Trend
 export interface FailedTaskDetail {
   session_id: string; session_name: string;

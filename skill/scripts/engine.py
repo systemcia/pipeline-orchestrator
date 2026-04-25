@@ -858,6 +858,7 @@ def _auto_snapshot(session_dir: str, tid: str, state: dict) -> str | None:
 def cmd_done(args):
     log_rel = _write_log(args.dir, args.tid)
     snap_ref = None
+    auto_completed = False
     with _StateLock(args.dir):
         state = _read_state(args.dir)
         task = _find_task(state, args.tid)
@@ -874,6 +875,14 @@ def cmd_done(args):
 
         hint = _quality_hint(state, args.tid)
         phase_msg = _try_auto_advance_phase(args.dir, state)
+
+        if (
+            state["status"] == "APPLYING"
+            and all(t["status"] in ("COMPLETED", "SKIPPED", "FAILED") for t in state["tasks"])
+        ):
+            state["status"] = "COMPLETED"
+            auto_completed = True
+
         if not phase_msg:
             _write_state(args.dir, state)
     _append_telemetry(
@@ -891,6 +900,8 @@ def cmd_done(args):
         msg += f" [snapshot: {snap_ref}]"
     if phase_msg:
         msg += f" [{phase_msg}]"
+    if auto_completed:
+        msg += " [session auto-completed: all tasks terminal]"
     print(msg)
     _notify_event(args.dir, "task_done", task_id=args.tid)
 
