@@ -43,6 +43,17 @@ export function openPipelineDb(): DatabaseSync | null {
 }
 
 /**
+ * 以读写模式打开 Pipeline 主库。写操作（INSERT/UPDATE/DELETE）必须用此函数。
+ */
+export function openPipelineDbRW(): DatabaseSync | null {
+  const dbPath = resolvePipelineDbPath();
+  if (!existsSync(dbPath)) {
+    return null;
+  }
+  return new DatabaseSync(dbPath);
+}
+
+/**
  * 以只读方式打开 SQLite（使用 Node.js 内置 node:sqlite）。
  * API 与 better-sqlite3 兼容（同步 prepare/all/get）。
  * 调用方负责 close()。

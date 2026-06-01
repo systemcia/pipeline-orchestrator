@@ -14,7 +14,9 @@
 ├── review-feedback-{tid}.md # 质量门 B FAIL 条目落盘（Phase 3-f，每 task 独立）
 ├── review-feedback-phase4.md # 质量门 C FAIL 条目落盘（Phase 4b，全局级）
 ├── telemetry.jsonl         # 任务级遥测（engine start/done/fail 追加，含可选成本字段）
-├── session-analysis.md     # 会话分析合并报告（Phase 5 生成：经验总结 + 改进建议 + 趋势分析 + 假设复审）
+├── lessons.md              # 经验总结（Phase 5 / SessionReviewService 生成）
+├── improvements.md         # 改进建议（Phase 5 / SessionReviewService 生成）
+├── session-analysis.md     # 会话分析合并报告（旧格式，向后兼容；新流程拆分为 lessons.md + improvements.md）
 ├── logs/                   # 执行日志（每步一个）
 │   ├── 001-t1-后端API.md
 │   ├── 002-t2-前端页面.md

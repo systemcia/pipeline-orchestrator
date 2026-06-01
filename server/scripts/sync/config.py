@@ -94,6 +94,44 @@ def _collect_workspace_storage_dirs() -> List[Path]:
 
 WORKSPACE_STORAGE_DIRS: List[Path] = _collect_workspace_storage_dirs()
 
+
+def _collect_global_storage_vscdb_paths() -> List[Path]:
+    """收集 Cursor globalStorage/state.vscdb 路径（新版 composer 元数据存储在这里）。"""
+    paths: List[Path] = []
+    seen = set()
+
+    def add(p: Path) -> None:
+        try:
+            resolved = p.resolve()
+        except OSError:
+            resolved = p
+        key = str(resolved)
+        if key not in seen and p.is_file():
+            seen.add(key)
+            paths.append(p)
+
+    # WSL2
+    wsl_users_base = Path("/mnt/c/Users")
+    if wsl_users_base.is_dir():
+        try:
+            for user_dir in wsl_users_base.iterdir():
+                if not user_dir.is_dir():
+                    continue
+                add(user_dir / "AppData" / "Roaming" / "Cursor" / "User" / "globalStorage" / "state.vscdb")
+        except OSError:
+            pass
+
+    # Linux
+    add(HOME / ".config" / "Cursor" / "User" / "globalStorage" / "state.vscdb")
+
+    # macOS
+    add(HOME / "Library" / "Application Support" / "Cursor" / "User" / "globalStorage" / "state.vscdb")
+
+    return paths
+
+
+GLOBAL_STORAGE_VSCDB_PATHS: List[Path] = _collect_global_storage_vscdb_paths()
+
 # ─── 滚动清理 ───
 
 RETENTION_DAYS = 365

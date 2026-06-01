@@ -1,12 +1,19 @@
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
 import type { KnowledgeChunk, RagSearchResult } from '@pipeline/shared';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { escapeLike, openPipelineDb } from '../db.js';
+import { escapeLike, openPipelineDb, openPipelineDbRW } from '../db.js';
 import { defaultSessionsRoot } from './session-detail.js';
 
 const sessionsRoot = defaultSessionsRoot();
+
+type ChunkRow = Omit<KnowledgeChunk, 'source' | 'isStarred' | 'isDeleted'> & {
+  source: string;
+  isStarred: number | boolean;
+  isDeleted: number | boolean;
+};
 
 function dateToUnixMs(dateStr: string): number {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
@@ -90,12 +97,15 @@ function searchImprovementsOnDisk(q: string, remaining: number, project: string)
       hasCode: false,
       enrichmentStatus: 'session_file',
       timestamp: st.mtimeMs,
+      source: 'review',
+      isStarred: false,
+      isDeleted: false,
     });
   }
   return out;
 }
 
-function rowToChunk(row: Record<string, unknown>): KnowledgeChunk | null {
+function rowToChunk(row: Record<string, unknown>): ChunkRow | null {
   if (typeof row['id'] !== 'string' || typeof row['session_id'] !== 'string') return null;
   return {
     id: row['id'],
@@ -111,10 +121,13 @@ function rowToChunk(row: Record<string, unknown>): KnowledgeChunk | null {
     hasCode: Boolean(row['has_code']),
     enrichmentStatus: String(row['enrichment_status'] ?? ''),
     timestamp: Number(row['timestamp']) || 0,
+    source: String(row['source'] ?? 'chat'),
+    isStarred: Number(row['is_starred']) || 0,
+    isDeleted: Number(row['is_deleted']) || 0,
   };
 }
 
-const cw = (c: KnowledgeChunk) => ({
+const cw = (c: ChunkRow) => ({
   id: c.id,
   session_id: c.sessionId,
   chunk_index: c.chunkIndex,
@@ -128,6 +141,9 @@ const cw = (c: KnowledgeChunk) => ({
   has_code: c.hasCode,
   enrichment_status: c.enrichmentStatus,
   timestamp: c.timestamp,
+  source: c.source ?? 'chat',
+  is_starred: c.isStarred ?? 0,
+  is_deleted: c.isDeleted ?? 0,
 });
 
 const rw = (r: RagSearchResult) => ({
@@ -153,14 +169,106 @@ function withDb<T>(reply: FastifyReply, fn: (db: DatabaseSync) => T): T | Return
   }
 }
 
+function withDbRW<T>(reply: FastifyReply, fn: (db: DatabaseSync) => T): T | ReturnType<typeof err> {
+  const db = openPipelineDbRW();
+  if (!db) return err(reply, 500, 'pipeline db not available');
+  try {
+    return fn(db);
+  } finally {
+    db.close();
+  }
+}
+
 const CHUNK_SEL =
-  'SELECT id, session_id, chunk_index, project_name, user_query, ai_response_core, COALESCE(main_topic,\'\') AS main_topic, COALESCE(tags,\'\') AS tags, COALESCE(tools_used,\'\') AS tools_used, COALESCE(code_languages,\'\') AS code_languages, has_code, enrichment_status, timestamp FROM rag_knowledge_chunks';
+  "SELECT id, session_id, chunk_index, project_name, user_query, ai_response_core, COALESCE(main_topic,'') AS main_topic, COALESCE(tags,'') AS tags, COALESCE(tools_used,'') AS tools_used, COALESCE(code_languages,'') AS code_languages, has_code, enrichment_status, timestamp, COALESCE(source,'chat') AS source, COALESCE(is_starred,0) AS is_starred, COALESCE(is_deleted,0) AS is_deleted FROM rag_knowledge_chunks";
+const CHUNK_WHERE_ALIVE = 'WHERE (is_deleted = 0 OR is_deleted IS NULL)';
+
+function ragSearch(db: DatabaseSync, q: string, limit: number, project: string): RagSearchResult[] {
+  const pattern = `%${escapeLike(q)}%`;
+  const lowerQ = q.toLowerCase();
+  const results: RagSearchResult[] = [];
+  try {
+    let sql =
+      "SELECT user_query, ai_response_core, COALESCE(main_topic,'') AS main_topic, COALESCE(tags,'') AS tags FROM rag_knowledge_chunks WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (user_query LIKE ? ESCAPE '\\' OR ai_response_core LIKE ? ESCAPE '\\')";
+    const args: (string | number)[] = [pattern, pattern];
+    if (project) {
+      sql += ' AND project_name = ?';
+      args.push(project);
+    }
+    sql += ' ORDER BY timestamp DESC LIMIT ?';
+    args.push(limit);
+    const rows = db.prepare(sql).all(...args) as {
+      user_query: string;
+      ai_response_core: string;
+      main_topic: string;
+      tags: string;
+    }[];
+    for (const row of rows) {
+      const r: RagSearchResult = {
+        query: row.user_query,
+        answerCore: row.ai_response_core,
+        topic: row.main_topic,
+        tags: row.tags,
+        score: 0,
+        source: 'chunk',
+      };
+      r.score = chunkRelevance(lowerQ, r);
+      results.push(r);
+    }
+  } catch {}
+  const remaining = limit - results.length;
+  if (remaining > 0) {
+    for (const chunk of searchImprovementsOnDisk(q, remaining, project)) {
+      const r: RagSearchResult = {
+        query: chunk.userQuery,
+        answerCore: chunk.aiResponseCore,
+        topic: chunk.mainTopic,
+        tags: chunk.tags,
+        score: 0,
+        source: 'chunk',
+      };
+      r.score = chunkRelevance(lowerQ, r);
+      results.push(r);
+    }
+  }
+  let gemLimit = Math.floor(limit / 2);
+  if (gemLimit < 2) gemLimit = 2;
+  try {
+    const rows = db
+      .prepare(
+        "SELECT user_prompt, COALESCE(ai_response_summary,'') AS ai_summary, category, COALESCE(quality_tags,'') AS quality_tags, quality_score FROM prompt_gems WHERE (user_prompt LIKE ? ESCAPE '\\' OR ai_response_summary LIKE ? ESCAPE '\\') AND quality_score >= 60 ORDER BY quality_score DESC, timestamp DESC LIMIT ?",
+      )
+      .all(pattern, pattern, gemLimit) as {
+        user_prompt: string;
+        ai_summary: string;
+        category: string;
+        quality_tags: string;
+        quality_score: number;
+      }[];
+    for (const row of rows) {
+      results.push({
+        query: row.user_prompt,
+        answerCore: row.ai_summary,
+        topic: row.category,
+        tags: row.quality_tags,
+        score: row.quality_score,
+        source: 'gem',
+      });
+    }
+  } catch {}
+  results.sort((a, b) => b.score - a.score);
+  return results.length > limit ? results.slice(0, limit) : results;
+}
 
 export const knowledgePlugin: FastifyPluginAsync = async (app) => {
   app.get('/knowledge/stats', (_req, reply) => {
     return withDb(reply, (db) => {
       const stats = {
-        total_chunks: Number((db.prepare('SELECT count(*) AS c FROM rag_knowledge_chunks').get() as { c: number }).c ?? 0),
+        total_chunks: Number(
+          (db
+            .prepare('SELECT count(*) AS c FROM rag_knowledge_chunks WHERE (is_deleted = 0 OR is_deleted IS NULL)')
+            .get() as { c: number }).c ?? 0,
+        ),
         total_gems: Number((db.prepare('SELECT count(*) AS c FROM prompt_gems').get() as { c: number }).c ?? 0),
         project_distribution: [] as { project: string; chunks: number; sessions: number }[],
         category_distribution: [] as { category: string; count: number; avg_score: number }[],
@@ -169,7 +277,7 @@ export const knowledgePlugin: FastifyPluginAsync = async (app) => {
         stats.project_distribution = (
           db
             .prepare(
-              `SELECT project_name, count(*) as chunks, count(DISTINCT session_id) as sessions FROM rag_knowledge_chunks GROUP BY project_name ORDER BY chunks DESC`,
+              `SELECT project_name, count(*) as chunks, count(DISTINCT session_id) as sessions FROM rag_knowledge_chunks WHERE (is_deleted = 0 OR is_deleted IS NULL) GROUP BY project_name ORDER BY chunks DESC`,
             )
             .all() as { project_name: string; chunks: number; sessions: number }[]
         ).map((r) => ({ project: r.project_name, chunks: r.chunks, sessions: r.sessions }));
@@ -189,17 +297,135 @@ export const knowledgePlugin: FastifyPluginAsync = async (app) => {
 
   app.get('/knowledge/chunks', (req, reply) => {
     return withDb(reply, (db) => {
-      const q = req.query as { project?: string; limit?: string };
+      const q = req.query as { project?: string; limit?: string; source?: string; starred?: string };
       let limit = parseInt(q.limit ?? '20', 10);
       if (limit <= 0 || limit > 100) limit = 20;
+      const conditions: string[] = [];
+      const args: (string | number)[] = [];
       const project = q.project ?? '';
-      const rows = (
-        project
-          ? db.prepare(`${CHUNK_SEL} WHERE project_name = ? ORDER BY timestamp DESC LIMIT ?`).all(project, limit)
-          : db.prepare(`${CHUNK_SEL} ORDER BY timestamp DESC LIMIT ?`).all(limit)
-      ) as Record<string, unknown>[];
-      const chunks = rows.map(rowToChunk).filter(Boolean) as KnowledgeChunk[];
+      if (project) {
+        conditions.push('project_name = ?');
+        args.push(project);
+      }
+      if (q.source) {
+        conditions.push('source = ?');
+        args.push(q.source);
+      }
+      if (q.starred === '1' || q.starred === 'true') {
+        conditions.push('is_starred = 1');
+      }
+      const where =
+        conditions.length > 0 ? `${CHUNK_WHERE_ALIVE} AND ${conditions.join(' AND ')}` : CHUNK_WHERE_ALIVE;
+      args.push(limit);
+      const rows = db
+        .prepare(`${CHUNK_SEL} ${where} ORDER BY timestamp DESC LIMIT ?`)
+        .all(...args) as Record<string, unknown>[];
+      const chunks = rows.map(rowToChunk).filter(Boolean) as ChunkRow[];
       return ok(reply, chunks.map(cw));
+    });
+  });
+
+  app.post('/knowledge/chunks', (req, reply) => {
+    const b = req.body as {
+      user_query?: string;
+      ai_response_core?: string;
+      main_topic?: string;
+      tags?: string;
+      project_name?: string;
+    };
+    if (!b?.user_query) return err(reply, 400, 'user_query is required');
+    const userQuery = b.user_query;
+    const aiResponseCore = b.ai_response_core || '';
+    return withDbRW(reply, (db) => {
+      const id = createHash('sha256')
+        .update(Date.now() + ':' + userQuery)
+        .digest('hex')
+        .slice(0, 32);
+      const contentHash = createHash('md5')
+        .update(userQuery + aiResponseCore)
+        .digest('hex');
+      db.prepare(
+        `INSERT INTO rag_knowledge_chunks (id, session_id, chunk_index, project_name, user_query, ai_response_core, vector_text, has_code, timestamp, content_hash, source, main_topic, tags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ).run(
+        id,
+        'manual',
+        0,
+        b.project_name || '',
+        userQuery,
+        aiResponseCore,
+        userQuery + '\n' + aiResponseCore,
+        0,
+        Date.now(),
+        contentHash,
+        'manual',
+        b.main_topic || '',
+        b.tags || '',
+      );
+      return ok(reply, { id });
+    });
+  });
+
+  app.put('/knowledge/chunks/:id', (req, reply) => {
+    const { id: chunkId } = req.params as { id: string };
+    const b = req.body as { user_query?: string; ai_response_core?: string; main_topic?: string; tags?: string };
+    return withDbRW(reply, (db) => {
+      const sets: string[] = [];
+      const vals: (string | number)[] = [];
+      if (b?.user_query !== undefined) {
+        sets.push('user_query = ?');
+        vals.push(b.user_query);
+      }
+      if (b?.ai_response_core !== undefined) {
+        sets.push('ai_response_core = ?');
+        vals.push(b.ai_response_core);
+      }
+      if (b?.main_topic !== undefined) {
+        sets.push('main_topic = ?');
+        vals.push(b.main_topic);
+      }
+      if (b?.tags !== undefined) {
+        sets.push('tags = ?');
+        vals.push(b.tags);
+      }
+      if (sets.length === 0) return err(reply, 400, 'no fields to update');
+      if (b?.user_query !== undefined || b?.ai_response_core !== undefined) {
+        sets.push("vector_text = COALESCE(NULLIF(?,''), user_query) || char(10) || COALESCE(NULLIF(?,''), ai_response_core)");
+        vals.push(b?.user_query ?? '', b?.ai_response_core ?? '');
+        sets.push("source = 'manual'");
+      }
+      vals.push(chunkId);
+      const result = db
+        .prepare(
+          `UPDATE rag_knowledge_chunks SET ${sets.join(', ')} WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)`,
+        )
+        .run(...vals);
+      if (result.changes === 0) return err(reply, 404, 'chunk not found');
+      return ok(reply, { updated: chunkId });
+    });
+  });
+
+  app.delete('/knowledge/chunks/:id', (req, reply) => {
+    const { id: chunkId } = req.params as { id: string };
+    return withDbRW(reply, (db) => {
+      const result = db.prepare('UPDATE rag_knowledge_chunks SET is_deleted = 1 WHERE id = ?').run(chunkId);
+      if (result.changes === 0) return err(reply, 404, 'chunk not found');
+      return ok(reply, { deleted: chunkId });
+    });
+  });
+
+  app.patch('/knowledge/chunks/:id/star', (req, reply) => {
+    const { id: chunkId } = req.params as { id: string };
+    return withDbRW(reply, (db) => {
+      const result = db
+        .prepare(
+          'UPDATE rag_knowledge_chunks SET is_starred = CASE WHEN is_starred = 1 THEN 0 ELSE 1 END WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+        )
+        .run(chunkId);
+      if (result.changes === 0) return err(reply, 404, 'chunk not found');
+      const row = db.prepare('SELECT is_starred FROM rag_knowledge_chunks WHERE id = ?').get(chunkId) as
+        | { is_starred: number }
+        | undefined;
+      return ok(reply, { id: chunkId, is_starred: row?.is_starred ?? 0 });
     });
   });
 
@@ -211,18 +437,18 @@ export const knowledgePlugin: FastifyPluginAsync = async (app) => {
     const project = qp.project ?? '';
     const db = openPipelineDb();
     const pat = `%${escapeLike(qp.q)}%`;
-    let chunks: KnowledgeChunk[] = [];
+    let chunks: ChunkRow[] = [];
     let sqlErr: Error | null = null;
     try {
       if (db) {
         try {
-          const wh = `${CHUNK_SEL} WHERE (user_query LIKE ? ESCAPE '\\' OR ai_response_core LIKE ? ESCAPE '\\')`;
+          const wh = `${CHUNK_SEL} WHERE (is_deleted = 0 OR is_deleted IS NULL) AND (user_query LIKE ? ESCAPE '\\' OR ai_response_core LIKE ? ESCAPE '\\')`;
           const rows = (
             project
               ? db.prepare(`${wh} AND project_name = ? ORDER BY timestamp DESC LIMIT ?`).all(pat, pat, project, limit)
               : db.prepare(`${wh} ORDER BY timestamp DESC LIMIT ?`).all(pat, pat, limit)
           ) as Record<string, unknown>[];
-          chunks = rows.map(rowToChunk).filter(Boolean) as KnowledgeChunk[];
+          chunks = rows.map(rowToChunk).filter(Boolean) as ChunkRow[];
         } catch (e) {
           sqlErr = e instanceof Error ? e : new Error(String(e));
         }
@@ -233,7 +459,7 @@ export const knowledgePlugin: FastifyPluginAsync = async (app) => {
       db?.close();
     }
     const need = limit - chunks.length;
-    if (need > 0) chunks = chunks.concat(searchImprovementsOnDisk(qp.q, need, project));
+    if (need > 0) chunks = chunks.concat(searchImprovementsOnDisk(qp.q, need, project) as ChunkRow[]);
     if (chunks.length === 0 && sqlErr) return err(reply, 500, `search chunks: ${sqlErr.message}`);
     return ok(reply, chunks.map(cw));
   });
@@ -335,63 +561,23 @@ export const knowledgePlugin: FastifyPluginAsync = async (app) => {
     });
   });
 
+  app.get('/knowledge/rag-search', (req, reply) => {
+    const qp = req.query as { q?: string; limit?: string; project?: string; project_id?: string };
+    if (!qp.q) return err(reply, 400, "query parameter 'q' is required");
+    let limit = parseInt(qp.limit ?? '5', 10);
+    if (limit <= 0 || limit > 20) limit = 5;
+    const project = qp.project ?? qp.project_id ?? '';
+    return withDb(reply, (db) => ok(reply, ragSearch(db, qp.q!, limit, project).map(rw)));
+  });
+
   app.post('/knowledge/rag', (req, reply) => {
-    const b = req.body as { q?: string; limit?: number } | undefined;
-    const qq = req.query as { q?: string; limit?: string };
+    const b = req.body as { q?: string; limit?: number; project?: string } | undefined;
+    const qq = req.query as { q?: string; limit?: string; project?: string };
     let q = (typeof b?.q === 'string' ? b.q : '') || qq.q || '';
     let limit = typeof b?.limit === 'number' && !Number.isNaN(b.limit) ? b.limit : parseInt(qq.limit ?? '5', 10);
     if (!q) return err(reply, 400, "query parameter 'q' is required");
     if (limit <= 0 || limit > 20) limit = 5;
-    return withDb(reply, (db) => {
-      const pattern = `%${escapeLike(q)}%`;
-      const lowerQ = q.toLowerCase();
-      const results: RagSearchResult[] = [];
-      try {
-        const rows = db
-          .prepare(
-            `SELECT user_query, ai_response_core, COALESCE(main_topic,'') AS main_topic, COALESCE(tags,'') AS tags FROM rag_knowledge_chunks WHERE user_query LIKE ? ESCAPE '\\' OR ai_response_core LIKE ? ESCAPE '\\' ORDER BY timestamp DESC LIMIT ?`,
-          )
-          .all(pattern, pattern, limit) as { user_query: string; ai_response_core: string; main_topic: string; tags: string }[];
-        for (const row of rows) {
-          const r: RagSearchResult = {
-            query: row.user_query,
-            answerCore: row.ai_response_core,
-            topic: row.main_topic,
-            tags: row.tags,
-            score: 0,
-            source: 'chunk',
-          };
-          r.score = chunkRelevance(lowerQ, r);
-          results.push(r);
-        }
-      } catch {}
-      let gemLimit = Math.floor(limit / 2);
-      if (gemLimit < 2) gemLimit = 2;
-      try {
-        const rows = db
-          .prepare(
-            `SELECT user_prompt, COALESCE(ai_response_summary,'') AS ai_summary, category, COALESCE(quality_tags,'') AS quality_tags, quality_score FROM prompt_gems WHERE (user_prompt LIKE ? ESCAPE '\\' OR ai_response_summary LIKE ? ESCAPE '\\') AND quality_score >= 3 ORDER BY quality_score DESC, timestamp DESC LIMIT ?`,
-          )
-          .all(pattern, pattern, gemLimit) as {
-            user_prompt: string;
-            ai_summary: string;
-            category: string;
-            quality_tags: string;
-            quality_score: number;
-          }[];
-        for (const row of rows) {
-          results.push({
-            query: row.user_prompt,
-            answerCore: row.ai_summary,
-            topic: row.category,
-            tags: row.quality_tags,
-            score: row.quality_score,
-            source: 'gem',
-          });
-        }
-      } catch {}
-      results.sort((a, b) => b.score - a.score);
-      return ok(reply, (results.length > limit ? results.slice(0, limit) : results).map(rw));
-    });
+    const project = (typeof b?.project === 'string' ? b.project : '') || qq.project || '';
+    return withDb(reply, (db) => ok(reply, ragSearch(db, q, limit, project).map(rw)));
   });
 };

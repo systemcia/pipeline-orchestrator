@@ -117,6 +117,8 @@
 ## 语言约束（见 references/context-engineering.md「语言特化 Hints」）
 {language_hints}
 
+{implementation_discipline}
+
 ## 范围锁定（NEVER 违反）
 - 仅修改与本 task 相关的文件
 - 不要"顺手"修改无关代码、创建无关文档
@@ -288,4 +290,81 @@ Task '{tid}' 的变更文件：{files}
 ## 完成后汇报
 在输出最开头写一行：'## 执行结果: SUCCESS' 或 '## 执行结果: FAILED' 或 '## 执行结果: SOFT_FAIL'
 然后附 JSON 块（tests_added / run_command / result）。
+```
+
+---
+
+### 实现纪律 — TDD（`{implementation_discipline}` 占位符内容）
+
+> 以下为 `tdd_mode=prompt|strict` 时注入 executor prompt 的 `{implementation_discipline}` 占位符。`tdd_mode=off` 时替换为空字符串。
+
+```
+## 实现纪律 — TDD（项目配置启用，不可跳过）
+
+### 铁律：先测试后实现
+NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST。
+先写代码后补测试？删掉代码，从测试开始。
+
+### RED-GREEN-REFACTOR 循环
+对每个新行为（函数/方法/API 端点），执行：
+
+1. **RED** — 写一个最小失败测试（一个行为一个测试）
+   运行测试命令，确认**断言失败**（不是编译报错）
+2. **GREEN** — 写最少代码让测试通过
+   运行测试命令，确认通过 + 全套不回归
+3. **REFACTOR** — 消除重复、改善命名（保持绿色）
+4. **COMMIT** — 每个循环完成后 git add 相关文件
+
+### 分批实现
+每 2-3 个行为为一批。一批完成后再开始下一批。
+行为总数 > 5 时，在汇报中注明建议拆分。
+
+### 验证命令
+- Go: `go test ./pkg/xxx -count=1 -run TestXxx -v`
+- TS: `npx vitest run path/to/test.ts`（或 `npx jest`）
+- Python: `pytest path/to/test.py::test_name -v`
+
+### 修改已有代码时
+已有函数已有测试 → 修改前先确认现有测试通过 → 改代码 → 确认测试仍通过。
+已有函数无测试 → 先为当前行为补一个测试（不要求全覆盖）。
+
+### 与错误修复的联动
+遇到 bug → 不要直接修。先写失败测试复现 bug → 修复 → 确认通过。
+
+### 完整参考
+如需完整 TDD 规则（反模式、降级策略、卡住处理），
+读取 `~/.cursor/skills/tdd-discipline/SKILL.md`。
+```
+
+### 错误修复 — Systematic Debugging（`tdd_mode` ≠ `off` 时注入 error-fixer）
+
+> 以下为 `tdd_mode=prompt|strict` 且失败类型为测试失败/运行时错误时，追加到 error-fixer prompt 中的段落。
+
+```
+## 调试纪律 — Systematic Debugging（项目配置启用）
+
+修复前 MUST 完成四阶段根因分析，不得直接猜测修复：
+
+### Phase 1: Root Cause Investigation
+- 完整阅读错误消息和堆栈
+- 确认可稳定复现
+- 检查最近变更（git diff）
+- 追踪数据流直到找到源头
+
+### Phase 2: Pattern Analysis
+- 找到同项目中类似的正常工作代码
+- 逐项对比差异
+
+### Phase 3: Hypothesis and Testing
+- 明确陈述假设："我认为 X 是根因，因为 Y"
+- 做最小变更验证假设
+- 假设不成立 → 新假设，不要叠加修复
+
+### Phase 4: Implementation
+- 先写失败测试复现 bug（TDD 联动）
+- 实现单一修复
+- 验证测试通过 + 无回归
+- 2 次修复尝试失败 → 报 UNFIXED，不要继续猜
+
+完整参考：`~/.cursor/skills/systematic-debugging/SKILL.md`
 ```

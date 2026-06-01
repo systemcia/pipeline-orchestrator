@@ -124,6 +124,7 @@ pipeline-orchestrator（编排层 — 只调度不执行）
 | Phase 3 产出校验 | — | ✓ | ✓ | ✓ |
 | Phase 3 验收标准验证 | `acceptance-check` | ✓ | ✓ | ✓ |
 | Phase 3 编译检查 | `compile` | ✓ | ✓ | ✓ |
+| Phase 3 测试覆盖 delta | `test-coverage-delta` | ✓‡ | ✓‡ | ✓‡ |
 | Phase 3 单元测试 | `unit-test` | ✓*† | ✓* | ✓* |
 | Phase 3 增量回归测试 | `regression-test` | 跳过 | 跳过 | ✓* |
 | Phase 3 CCC-2 | `ccc-2` | 跳过 | ✓ | ✓ |
@@ -138,6 +139,7 @@ pipeline-orchestrator（编排层 — 只调度不执行）
 
 *\* = 有测试框架时执行*
 *† = 小规模新增：RAG 注入避免重复已知错误；单测（有框架时）是最低成本的正确性保障*
+*‡ = 仅 `tdd_mode` ≠ `off` 时执行（由 `.pipeline-orchestrator.yaml` 配置控制）*
 
 **Profile 叠加规则**：Profile 的 `skip_steps` 与规模裁剪矩阵取并集——两者任一标记跳过则跳过。Step ID 用于 Profile 配置中的 `skip_steps` 字段引用。无 Step ID 的步骤（如 Phase 0、Phase 2、Phase 4 完成）为必选步骤，不受 Profile 裁剪。
 

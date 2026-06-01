@@ -46,7 +46,7 @@ export default function SessionSearch() {
   const copyContext = () => {
     if (!context) return;
     const text = timeline.map((c, i) =>
-      `[${i + 1}] ${c.user_query}\n→ ${c.ai_response_core?.substring(0, 200) || '(无回复)'}`
+      `[${i + 1}] ${c.user_query}\n→ ${c.ai_response_core || '(无回复)'}`
     ).join('\n\n');
     const summary = `## 会话上下文: ${context.name || context.session_id}\n项目: ${context.project_name}\n\n${text}`;
     navigator.clipboard.writeText(summary);
@@ -163,9 +163,8 @@ export default function SessionSearch() {
                           </div>
                           <div style={{ fontWeight: 500, marginBottom: 4 }}>{c.user_query}</div>
                           {c.ai_response_core && (
-                            <div style={{ fontSize: 12, color: '#666', whiteSpace: 'pre-wrap' }}>
-                              {c.ai_response_core.substring(0, 300)}
-                              {c.ai_response_core.length > 300 && '...'}
+                            <div style={{ fontSize: 12, color: '#666', whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>
+                              {c.ai_response_core}
                             </div>
                           )}
                         </Card>

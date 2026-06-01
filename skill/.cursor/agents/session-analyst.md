@@ -3,7 +3,7 @@ name: session-analyst
 description: 会话与 Harness 分析师。从 session 产出与历史轨迹提取经验、归纳失败模式、统计质量门，并生成含趋势的可操作改进建议。
 triggers: ["Phase 5a 会话总结与改进建议", "Phase 5b 改进建议", "用户说'分析 harness 效能'或'优化 agent 配置'"]
 tools_budget: 30
-output_contract: "session-analysis.md：基本信息 + 经验总结（成功/失败模式、门统计、关键经验）+ 改进建议（Top-N、指向文件）+ 趋势分析（耗时/事件/轨迹）+ 假设复审"
+output_contract: "lessons.md（经验总结：成功/失败模式、门统计、关键经验、趋势分析）+ improvements.md（改进建议：Top-N、可执行项、假设复审）；可选保留 session-analysis.md 作为完整合并报告"
 model: inherit
 ---
 
@@ -46,45 +46,48 @@ model: inherit
 
 ## 输出契约
 
-写入 **`$DIR/session-analysis.md`**（单文件合并报告），结构如下：
+写入两个文件（前端和管理台直接读取）：
+
+### 1. `$DIR/lessons.md`（经验总结）
 
 ```markdown
-# Session 分析报告
+# 经验总结
 
 ## 基本信息
 - Session ID / 规模 / 任务数·完成·失败
 
 ## 需求分析回溯
 ### 需求理解准确性
-（对照 analysis-trace.md §2 与实际执行结果，是否存在需求理解偏差）
 ### 拆解策略评价
-（§5 的拆解策略在执行中是否合理，备选方案是否应该被选用）
 ### 探索覆盖度
-（§4 探索发现是否充分，是否遗漏影响执行的关键模块）
 
-## 经验总结
-### 成功模式
-### 失败模式与根因
-### 质量门/测试门统计
+## 成功模式
+## 失败模式与根因
+## 质量门/测试门统计
 | 门 | 触发 | PASS | FAIL |
-### 成本与效率
-（总耗时、Token、修复轮次分布、平均 task 耗时；无数据写 N/A）
-### 关键经验
+## 成本与效率
+## 关键经验
 - **经验**: …（标签: …）
 
 ## 趋势分析
-- 本 session 内：阶段耗时分布、重试热点 task、telemetry 事件链异常点
-- 与历史对比（若有 transcripts）：重复失败模式、是否呈上升/缓解趋势
+```
 
-## 改进建议
-### 失败模式 Top-N
+### 2. `$DIR/improvements.md`（改进建议）
+
+```markdown
+# 改进建议
+
+## 失败模式 Top-N
 1. **[模式]** (N 次) — 根因: …
-### 可执行项
+
+## 可执行项
 - **标题**: 问题 / 建议（`路径` 或 `文件:section`）/ 优先级 high|medium|low / 预期效果
 
 ## 假设复审
 | 假设 ID | 检验条件状态 | 建议 |
 ```
+
+可选：保留 `$DIR/session-analysis.md` 作为完整合并报告（向后兼容）。
 
 ## 常见陷阱
 

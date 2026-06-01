@@ -98,6 +98,7 @@ export interface KnowledgeChunk {
   user_query: string; ai_response_core: string; main_topic: string;
   tags: string; tools_used: string; code_languages: string;
   has_code: boolean; enrichment_status: string; timestamp: number;
+  source?: string; is_starred?: number; is_deleted?: number;
 }
 
 export interface PromptGem {
@@ -113,12 +114,24 @@ export interface KnowledgeStats {
 }
 
 export const getKnowledgeStats = () => request<KnowledgeStats>('/api/knowledge/stats');
-export const getKnowledgeChunks = (project?: string, limit = 20) =>
-  request<KnowledgeChunk[]>(`/api/knowledge/chunks?project=${project || ''}&limit=${limit}`);
-export const searchKnowledge = (q: string, limit = 10) =>
-  request<KnowledgeChunk[]>(`/api/knowledge/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+export const getKnowledgeChunks = (project?: string, limit = 20, source?: string, starred?: boolean) =>
+  request<KnowledgeChunk[]>(`/api/knowledge/chunks?project=${project || ''}&limit=${limit}${source ? `&source=${source}` : ''}${starred ? '&starred=1' : ''}`);
+export const searchKnowledge = (q: string, limit = 10, project?: string) =>
+  request<KnowledgeChunk[]>(`/api/knowledge/search?q=${encodeURIComponent(q)}&limit=${limit}${project ? `&project=${encodeURIComponent(project)}` : ''}`);
 export const getGems = (category?: string, minScore = 0, limit = 20) =>
   request<PromptGem[]>(`/api/knowledge/gems?category=${category || ''}&min_score=${minScore}&limit=${limit}`);
+
+export const createKnowledgeChunk = (data: { user_query: string; ai_response_core?: string; main_topic?: string; tags?: string; project_name?: string }) =>
+  request<{ id: string }>('/api/knowledge/chunks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+
+export const updateKnowledgeChunk = (id: string, data: { user_query?: string; ai_response_core?: string; main_topic?: string; tags?: string }) =>
+  request<{ updated: string }>(`/api/knowledge/chunks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+
+export const deleteKnowledgeChunk = (id: string) =>
+  request<{ deleted: string }>(`/api/knowledge/chunks/${id}`, { method: 'DELETE' });
+
+export const toggleKnowledgeStar = (id: string) =>
+  request<{ id: string; is_starred: number }>(`/api/knowledge/chunks/${id}/star`, { method: 'PATCH' });
 
 // Token Stats
 export interface TokenStats {
@@ -167,6 +180,8 @@ export const ragSearch = (q: string, limit = 5) =>
 // Lessons & Improvements
 export const getLessons = (id: string) => request<string>(`/api/sessions/${id}/lessons`);
 export const getImprovements = (id: string) => request<string>(`/api/sessions/${id}/improvements`);
+export const generateReview = (id: string) =>
+  request<{ status: string }>(`/api/sessions/${id}/generate-review`, { method: 'POST' });
 
 // Requirement Tracking
 export const getAnalysisTrace = (id: string) => request<string>(`/api/sessions/${id}/analysis-trace`);

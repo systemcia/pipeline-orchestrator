@@ -223,6 +223,9 @@ export interface KnowledgeChunk {
   hasCode: boolean;
   enrichmentStatus: string;
   timestamp: number;
+  source: string;
+  isStarred: boolean;
+  isDeleted: boolean;
 }
 
 /**

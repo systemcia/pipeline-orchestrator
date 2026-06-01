@@ -20,6 +20,7 @@ import ast
 import hashlib
 import json
 import logging
+import os
 import re
 import sqlite3
 import sys
@@ -32,6 +33,7 @@ from config import (
     CATEGORY_RULES, CHATS_DIR, CONSTRAINT_MARKERS,
     EXCLUDE_CHUNK_KEYWORDS, EXCLUDE_CONTENT_KEYWORDS,
     EXCLUDE_PROJECTS, EXCLUDE_PROJECTS_PARTIAL,
+    GLOBAL_STORAGE_VSCDB_PATHS,
     GOAL_VERBS, LOG_FILE, PIPELINE_DB, PROJECTS_DIR, PROMPT_MIN_SCORE,
     PROMPT_SCORE_WEIGHTS, RETENTION_DAYS, SOURCE_RULES,
     WORKSPACE_STORAGE_DIRS,
@@ -98,6 +100,16 @@ def extract_text_from_content(content) -> str:
                 parts.append(item)
         return "\n".join(parts)
     return str(content) if content else ""
+
+
+def strip_thinking(text: str) -> str:
+    """剥离模型思考/推理块，只保留最终输出"""
+    if not text:
+        return ""
+    for tag in ("antml:thinking", "thinking", "antThinking"):
+        pattern = rf"<{tag}>.*?</{tag}>"
+        text = re.sub(pattern, "", text, flags=re.DOTALL)
+    return text.strip()
 
 
 def strip_system_tags(text: str) -> str:
@@ -379,6 +391,81 @@ def classify_category(text: str) -> str:
     return "other"
 
 
+def _extract_main_topic(text: str) -> str:
+    """从用户问题中提取主题（GOAL_VERBS + 宾语短语，截取前 50 字符）"""
+    for verb in GOAL_VERBS:
+        idx = text.find(verb)
+        if idx >= 0:
+            topic = text[idx:idx + 50].strip()
+            return topic if topic else verb
+    return classify_category(text)
+
+
+def _extract_tags(clean_query: str, ai_text: str) -> str:
+    """从 query 和 AI 回复中检测语言/框架标签，返回 JSON 数组字符串"""
+    combined = (clean_query + " " + ai_text).lower()
+    tags: List[str] = []
+
+    language_rules = [
+        ("python", ["python", "pip ", "django", "flask", "fastapi"]),
+        ("go", ["golang", r"\bgo\b", "gin ", ".go "]),
+        ("typescript", ["typescript", "tsx", ".ts "]),
+        ("javascript", ["javascript", "react", "vue", "node"]),
+        ("sql", ["sql", "mysql", "postgres", "sqlite"]),
+        ("shell", ["bash", "shell", " sh ", "zsh"]),
+    ]
+    for lang, keywords in language_rules:
+        matched = False
+        for kw in keywords:
+            if kw.startswith(r"\b"):
+                if re.search(kw, combined):
+                    matched = True
+                    break
+            elif kw in combined:
+                matched = True
+                break
+        if matched:
+            tags.append(lang)
+
+    framework_rules = [
+        ("react", ["react"]),
+        ("fastify", ["fastify"]),
+        ("gin", ["gin"]),
+        ("django", ["django"]),
+        ("express", ["express"]),
+        ("antd", ["antd", "ant design"]),
+    ]
+    for fw, keywords in framework_rules:
+        if any(kw in combined for kw in keywords) and fw not in tags:
+            tags.append(fw)
+
+    return json.dumps(tags, ensure_ascii=False)
+
+
+def _extract_tools_used(ai_text: str) -> str:
+    """从 AI 回复中检测工具调用模式，返回 JSON 数组字符串"""
+    if not ai_text:
+        return json.dumps([], ensure_ascii=False)
+
+    tools: List[str] = []
+    tl = ai_text.lower()
+
+    if any(p in tl for p in ("read file", "read(", "读取文件")):
+        tools.append("read")
+    if any(p in tl for p in ("shell", "执行命令")):
+        tools.append("shell")
+    if any(p in tl for p in ("grep", "搜索", "rg ")):
+        tools.append("grep")
+    if any(p in tl for p in ("write(", "写入文件")) or "Write" in ai_text:
+        tools.append("write")
+    if "strreplace" in tl or "替换" in ai_text:
+        tools.append("str_replace")
+    if any(p in tl for p in ("task", "subagent", "spawn")):
+        tools.append("task")
+
+    return json.dumps(tools, ensure_ascii=False)
+
+
 # ─── 提示词质量评分 ───
 
 def score_prompt(text: str) -> Tuple[float, List[str]]:
@@ -642,18 +729,149 @@ def _scan_one_state_vscdb(
     return written
 
 
+def _safe_copy_vscdb(src: Path) -> Optional[Path]:
+    """WSL 跨文件系统直接读 state.vscdb 可能 I/O 出错，先拷贝到 /tmp。"""
+    if not str(src).startswith("/mnt/"):
+        return None  # 不需要拷贝
+    import shutil
+    tmp = Path("/tmp") / f"_sync_{src.name}_{hash(str(src)) & 0xFFFF:04x}"
+    try:
+        shutil.copy2(src, tmp)
+        wal = src.parent / (src.name + "-wal")
+        if wal.is_file():
+            shutil.copy2(wal, tmp.parent / (tmp.name + "-wal"))
+        return tmp
+    except OSError as e:
+        log.warning("拷贝 %s 失败: %s", src, e)
+        return None
+
+
+def _scan_global_composer_headers(
+    conn: sqlite3.Connection,
+    vscdb_path: Path,
+    cached_at_ms: int,
+    dry_run: bool,
+    session_token_map: Dict[str, int],
+) -> int:
+    """从 globalStorage/state.vscdb 的 composer.composerHeaders 读取 composer 元数据。
+    Cursor 1.0+ 将 allComposers 从各 workspace 的 composerData 迁移到此处。
+    """
+    copied = _safe_copy_vscdb(vscdb_path)
+    read_path = copied or vscdb_path
+    try:
+        uri = "file:" + read_path.resolve().as_posix() + "?mode=ro"
+        vconn = sqlite3.connect(uri, uri=True, timeout=30)
+        try:
+            row = vconn.execute(
+                "SELECT value FROM ItemTable WHERE key = ?",
+                ("composer.composerHeaders",),
+            ).fetchone()
+        finally:
+            vconn.close()
+    except Exception as e:
+        log.warning("读取 globalStorage %s 失败: %s", vscdb_path, e)
+        return 0
+    finally:
+        if copied and copied.exists():
+            copied.unlink(missing_ok=True)
+            wal = copied.parent / (copied.name + "-wal")
+            wal.unlink(missing_ok=True)
+
+    if not row:
+        return 0
+
+    text = _decode_item_table_value(row[0])
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        log.warning("composer.composerHeaders JSON 无效: %s", vscdb_path)
+        return 0
+
+    composers = data.get("allComposers") if isinstance(data, dict) else None
+    if not isinstance(composers, list):
+        log.warning("composer.composerHeaders 无 allComposers: %s", vscdb_path)
+        return 0
+
+    written = 0
+    sql = """
+        INSERT OR REPLACE INTO workspace_sessions (
+            composer_id, name, created_at, last_updated_at, unified_mode,
+            subtitle, total_lines_added, total_lines_removed, files_changed_count,
+            context_usage_percent, is_archived, created_on_branch, token_count,
+            workspace_id, cached_at, panel_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """
+    for item in composers:
+        if not isinstance(item, dict):
+            continue
+        composer_id = item.get("composerId")
+        if not composer_id:
+            continue
+        # 从 workspaceIdentifier 提取 workspace_id
+        ws_ident = item.get("workspaceIdentifier") or {}
+        workspace_id = ws_ident.get("id", "")
+        # activeBranch 作为 created_on_branch
+        active_branch = item.get("activeBranch") or {}
+        branch_name = active_branch.get("branchName")
+
+        token_count = resolve_composer_token_count(composer_id, session_token_map)
+        params = (
+            composer_id,
+            item.get("name"),
+            _int_or_none(item.get("createdAt")),
+            _int_or_none(item.get("lastUpdatedAt")),
+            item.get("unifiedMode"),
+            item.get("subtitle"),
+            _int_or_none(item.get("totalLinesAdded")),
+            _int_or_none(item.get("totalLinesRemoved")),
+            _int_or_none(item.get("filesChangedCount")),
+            _float_or_none(item.get("contextUsagePercent")),
+            _bool_to_sql_int(item.get("isArchived")),
+            branch_name,
+            token_count,
+            workspace_id,
+            cached_at_ms,
+            item.get("panelId"),
+        )
+        if not dry_run:
+            conn.execute(sql, params)
+        written += 1
+    return written
+
+
 def scan_workspace_sessions(
     conn: sqlite3.Connection,
     session_token_map: Dict[str, int],
     dry_run: bool = False,
 ) -> int:
-    """扫描 WORKSPACE_STORAGE_DIRS 下各 workspace 的 state.vscdb，写入 workspace_sessions。
+    """扫描 composer 元数据写入 workspace_sessions。
+
+    数据来源（按优先级）：
+    1. globalStorage/state.vscdb → composer.composerHeaders（Cursor 1.0+ 新格式）
+    2. workspaceStorage/*/state.vscdb → composer.composerData（旧格式回退）
 
     session_token_map: load_all_sessions 得到的 session_id -> token 粗估，缺失时再查 JSONL/store.db。
     单个文件失败仅 WARNING，不阻断；返回成功写入（或 dry_run 下将写入）的条数。
     """
     cached_at_ms = int(time.time() * 1000)
     total = 0
+
+    # 优先：globalStorage 的 composerHeaders（新版 Cursor）
+    for gs_path in GLOBAL_STORAGE_VSCDB_PATHS:
+        try:
+            n = _scan_global_composer_headers(
+                conn, gs_path, cached_at_ms, dry_run, session_token_map,
+            )
+            total += n
+            if n:
+                log.info(
+                    "globalStorage composerHeaders: %s %d 条 (%s)",
+                    "将写入" if dry_run else "已写入", n, gs_path,
+                )
+        except Exception as e:
+            log.warning("扫描 globalStorage 失败 %s: %s", gs_path, e)
+
+    # 回退：各 workspace 的 composerData（旧版 Cursor）
     for base in WORKSPACE_STORAGE_DIRS:
         if not base.is_dir():
             continue
@@ -682,7 +900,7 @@ def scan_workspace_sessions(
                 log.warning("扫描 state.vscdb 失败 %s: %s", vscdb_path, e)
     if total:
         log.info(
-            "workspace_sessions: %s %d 条",
+            "workspace_sessions: %s %d 条 (合计)",
             "将写入" if dry_run else "已写入",
             total,
         )
@@ -728,9 +946,22 @@ def sync(full: bool = False, dry_run: bool = False):
             has_code INTEGER, timestamp INTEGER, content_hash TEXT,
             file_path TEXT, indexed_at INTEGER,
             main_topic TEXT, tags TEXT, tools_used TEXT,
-            code_languages TEXT, enrichment_status TEXT
+            code_languages TEXT, enrichment_status TEXT,
+            source TEXT DEFAULT 'chat',
+            is_starred INTEGER DEFAULT 0,
+            is_deleted INTEGER DEFAULT 0
         )
     """)
+    # 幂等迁移：已有表补字段
+    for col, ddl in [
+        ("source", "TEXT DEFAULT 'chat'"),
+        ("is_starred", "INTEGER DEFAULT 0"),
+        ("is_deleted", "INTEGER DEFAULT 0"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE rag_knowledge_chunks ADD COLUMN {col} {ddl}")
+        except sqlite3.OperationalError:
+            pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS daily_summaries (
             id TEXT PRIMARY KEY, date TEXT, summary TEXT, language TEXT,
@@ -807,7 +1038,7 @@ def sync(full: bool = False, dry_run: bool = False):
                 query_lower = clean_query.lower()
                 if any(kw.lower() in query_lower for kw in EXCLUDE_CHUNK_KEYWORDS):
                     continue
-                ai_core = ai_text[:2000] if ai_text else ""
+                ai_core = strip_thinking(ai_text) if ai_text else ""
                 chunk_id = make_chunk_id(sess.session_id, idx)
                 content_hash = hashlib.md5(
                     (clean_query + ai_core).encode()
@@ -819,8 +1050,9 @@ def sync(full: bool = False, dry_run: bool = False):
                             INSERT OR IGNORE INTO rag_knowledge_chunks
                             (id, session_id, chunk_index, project_id, project_name,
                              workspace_id, user_query, ai_response_core, vector_text,
-                             has_code, timestamp, content_hash, file_path, indexed_at)
-                            VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?,?,?)
+                             has_code, timestamp, content_hash, file_path, indexed_at,
+                             source, main_topic, tags, tools_used)
+                            VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?,?,?, ?,?,?,?)
                         """, (
                             chunk_id, sess.session_id, idx,
                             sess.project_name, _short_name(sess.project_name),
@@ -831,6 +1063,10 @@ def sync(full: bool = False, dry_run: bool = False):
                             sess.created_at, content_hash,
                             sess.source_path,
                             int(time.time() * 1000),
+                            "chat",
+                            _extract_main_topic(clean_query),
+                            _extract_tags(clean_query, ai_core),
+                            _extract_tools_used(ai_core),
                         ))
                         stats["chunks_written"] += 1
                     except sqlite3.IntegrityError:
@@ -851,7 +1087,7 @@ def sync(full: bool = False, dry_run: bool = False):
                     continue
                 gem_id = make_gem_id(sess.session_id, pair_idx)
                 category = classify_category(clean_query)
-                ai_summary = (ai_text[:500] if ai_text else "")
+                ai_summary = strip_thinking(ai_text) if ai_text else ""
                 gem_ts = sess.created_at + pair_idx
 
                 if not dry_run:
@@ -884,6 +1120,10 @@ def sync(full: bool = False, dry_run: bool = False):
     if not dry_run:
         ds_count = _generate_daily_summaries(conn)
         stats["daily_summaries"] = ds_count
+
+    # ── 经验回灌 ──
+    reviews_count = _sync_session_reviews(conn, dry_run=dry_run)
+    stats["reviews_written"] = reviews_count
 
     # ── 滚动清理 ──
     cutoff_ms = int((time.time() - RETENTION_DAYS * 86400) * 1000)
@@ -918,11 +1158,12 @@ def sync(full: bool = False, dry_run: bool = False):
 
     log.info(
         "同步完成: 总会话=%d, 排除=%d, "
-        "chunks写入=%d/跳过=%d, gems写入=%d/跳过=%d, daily_summaries=%d",
+        "chunks写入=%d/跳过=%d, gems写入=%d/跳过=%d, daily_summaries=%d, reviews_written=%d",
         stats["total"], stats["excluded"],
         stats["chunks_written"], stats["chunks_skipped"],
         stats["gems_written"], stats["gems_skipped"],
         stats.get("daily_summaries", 0),
+        stats.get("reviews_written", 0),
     )
 
 
@@ -1035,6 +1276,84 @@ def _generate_daily_summaries(conn: sqlite3.Connection) -> int:
 
     if written:
         log.info("生成 daily_summaries: %d 天", written)
+    return written
+
+
+def _sync_session_reviews(conn: sqlite3.Connection, dry_run: bool = False) -> int:
+    """扫描编排 session 的 lessons/improvements/session-analysis 文件，回灌知识库"""
+    sessions_dir = Path(os.environ.get("PIPELINE_SESSIONS_DIR", "/opt/pipeline-orchestrator/sessions"))
+    if not sessions_dir.exists():
+        return 0
+
+    written = 0
+    review_files = ["lessons.md", "improvements.md", "session-analysis.md"]
+    patterns = []
+    for f in review_files:
+        patterns.append(f"pipe-*/{f}")
+        patterns.append(f"*/pipe-*/{f}")
+
+    for pattern in patterns:
+        for fpath in sessions_dir.glob(pattern):
+            try:
+                content = fpath.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if not content or len(content) < 20:
+                continue
+
+            session_dir = fpath.parent
+            session_id = session_dir.name
+            file_type = fpath.stem  # lessons / improvements / session-analysis
+
+            # 从 state.json 读 project_id
+            project_id = "_default"
+            state_path = session_dir / "state.json"
+            if state_path.exists():
+                try:
+                    state = json.loads(state_path.read_text(encoding="utf-8"))
+                    project_id = state.get("project_id", "_default")
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            # 按 ## 拆分
+            sections = re.split(r'\n(?=## )', content)
+            for idx, section in enumerate(sections):
+                section = section.strip()
+                if len(section) < 10:
+                    continue
+                content_hash = hashlib.md5(section.encode()).hexdigest()
+                chunk_id = hashlib.sha256(f"review:{session_id}:{file_type}:{idx}".encode()).hexdigest()[:32]
+
+                title_match = re.match(r'^##?\s+(.+)', section)
+                topic = title_match.group(1)[:50] if title_match else file_type
+
+                tags = json.dumps(["review", file_type], ensure_ascii=False)
+                if "improvement" in file_type:
+                    tags = json.dumps(["review", "improvement"], ensure_ascii=False)
+
+                if not dry_run:
+                    try:
+                        conn.execute("""
+                            INSERT OR IGNORE INTO rag_knowledge_chunks
+                            (id, session_id, chunk_index, project_id, project_name,
+                             user_query, ai_response_core, vector_text,
+                             has_code, timestamp, content_hash, source, main_topic, tags)
+                            VALUES (?,?,?,?,?, ?,?,?, ?,?,?,?,?,?)
+                        """, (
+                            chunk_id, session_id, idx,
+                            project_id, project_id,
+                            topic, section[:2000], topic + "\n" + section[:2000],
+                            0, int(fpath.stat().st_mtime * 1000),
+                            content_hash, "review", topic, tags,
+                        ))
+                        written += 1
+                    except sqlite3.IntegrityError:
+                        pass
+                else:
+                    written += 1
+
+    if written:
+        log.info("session reviews 回灌: %s %d 条", "将写入" if dry_run else "已写入", written)
     return written
 
 

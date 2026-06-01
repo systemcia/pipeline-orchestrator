@@ -16,7 +16,7 @@
   ├─ 可并行 ──→ 并行 spawn c ─┐         │
   └─ 串行 ──→ 逐个 a→b→c ──┐  │         │
                              ▼  ▼         │
-                3.3 逐个后置检查 d-0→d-0.5→O9→d-1→O10→d-2~j ────┘
+                3.3 逐个后置检查 d-0→d-0.5→O9→d-1→O10→d-1.5→d-2~j ────┘
                              │
                              ▼ ALL_DONE
                            Phase 4
@@ -187,6 +187,16 @@ b) **CCC-merge — 语义冲突检测**（新增）：
 
 注入预算和裁剪规则见 `references/context-engineering.md`。
 
+**c-TDD) 实现纪律注入**（`tdd_mode` ≠ `off` 时执行）
+
+读取 `.pipeline-orchestrator.yaml` 的 `tdd_mode`（profile 覆盖优先于顶层配置）。当 `tdd_mode` 为 `prompt` 或 `strict` 时，在 executor prompt 的 `{implementation_discipline}` 占位符处注入 TDD 精炼摘要（见 `references/prompt-templates.md`「实现纪律 — TDD」段落）。注入条件：
+
+1. 当前 task **非** `task-type: test`（tester 有独立职责，不注入 TDD）
+2. 项目有测试基础设施（`go.mod` / `package.json` 含 test script / `pytest.ini` 等 — 沿用 d-2 的探测逻辑）
+3. 条件不满足时 `{implementation_discipline}` 替换为空字符串
+
+并行 task 额外追加指令：「TDD 循环中仅 `git add`，不 `commit`，由编排层统一处理。」
+
 ```
 [Task] spawn generalPurpose SubAgent，指令：<填充后的模板>
 ```
@@ -270,9 +280,34 @@ FAIL（**HARD_FAIL**）→ spawn SubAgent 修复（按 `.cursor/agents/error-fix
 | `*.ts` / `*.tsx` / `*.js` / `*.jsx` | 存在 ESLint 配置（如 `.eslintrc.*`、`eslint.config.*`，或 `package.json` 内 `eslintConfig`），且 `npx eslint` 可用 | `npx eslint ...`（范围限于变更文件或项目既有 lint 脚本所定范围） |
 | `*.py` | 存在 `ruff.toml` 或 `pyproject.toml` 中 `[tool.ruff]`，且 `ruff` 或 `python3 -m ruff` 可用 | `ruff check`（范围限于变更文件或目录） |
 
-- **SKIP**（无对应类型 / 无配置 / 无可用 CLI）→ 在 session 或本轮说明中 **INFO** 一条（如 `O10 skip: no eslint config`），继续 **d-2** 或后续
-- **PASS**（exit 0）→ 继续 **d-2**（或后续步骤）
+- **SKIP**（无对应类型 / 无配置 / 无可用 CLI）→ 在 session 或本轮说明中 **INFO** 一条（如 `O10 skip: no eslint config`），继续 **d-1.5** 或后续
+- **PASS**（exit 0）→ 继续 **d-1.5**（或后续步骤）
 - **FAIL**（exit 非 0）→ **HARD_FAIL**（语义同 **`references/protocols.md`「Gate Taxonomy」** 中确定性工具失败）→ 按 `references/prompt-templates.md` 错误修复模板 spawn **error-fixer**（`.cursor/agents/error-fixer.md`），上下文含 lint 输出与变更文件列表；修复后主 Agent **再次内联**同 lint 命令，**至少重试 1 次**。仍 FAIL → 步骤 h 标记 FAILED；pending 记 **`hard:`**（如 `hard: Lint O10 {tid} 未通过`）
+
+**d-1.5) 测试覆盖 delta 检查**（`tdd_mode` ≠ `off` 时执行，主 Agent 内联）
+
+检查 executor 是否为新增/修改的生产代码产出了对应测试文件。`tdd_mode` 从 `.pipeline-orchestrator.yaml` 读取（profile 覆盖优先于顶层配置）。`tdd_mode=off` 时**整步跳过**。
+
+判定逻辑：
+1. 从 CHANGED 列表筛选生产源文件（排除测试文件、配置、文档）
+2. 对每个生产源文件检查：
+   a) 变更集中有对应测试文件（如 `foo.go` → `foo_test.go`）→ PASS
+   b) 同目录/同包下已存在对应测试文件（`ls *_test.go` / `ls *.test.ts`）→ PASS
+   c) 均无 → 标记为 uncovered
+
+```
+[Shell] UNCOVERED=""; for f in $(echo "$CHANGED" | grep -E '\.(go|ts|tsx|py)$' | grep -vE '(_test\.go|\.test\.[tj]sx?|\.spec\.[tj]sx?|test_[^/]*\.py)$'); do dir=$(dirname "$f"); base=$(basename "$f" | sed 's/\.\(go\|ts\|tsx\|py\)$//'); tc=$(echo "$CHANGED" | grep -cE "(${base}_test|${base}\.test|${base}\.spec|test_${base})" || true); te=$(ls "${dir}/${base}_test"* "${dir}/${base}.test"* "${dir}/${base}.spec"* "${dir}/test_${base}"* 2>/dev/null | wc -l); if [ "$tc" -eq 0 ] && [ "$te" -eq 0 ]; then UNCOVERED="$UNCOVERED $f"; fi; done; if [ -z "$UNCOVERED" ]; then echo "PASS: 所有生产源文件有对应测试"; else echo "UNCOVERED:$UNCOVERED"; fi
+```
+
+结果处理：
+- PASS 或 CHANGED 中无生产源文件 → 继续 **d-2**
+- UNCOVERED 非空：
+  - `tdd_mode=prompt` → **SOFT_FAIL**：记 pending.md（`soft: TDD d-1.5 {tid} 源文件无对应测试: {uncovered_list}`），**继续 d-2**
+  - `tdd_mode=strict` → **HARD_FAIL**：spawn error-fixer 补充测试文件（按 `references/prompt-templates.md` 错误修复模板，错误详情为"以下源文件缺少对应测试: {uncovered_list}"），重试 1 次后仍 uncovered → 步骤 h 标记 FAILED；pending 记 `hard: TDD d-1.5 {tid} 强制测试覆盖未通过`
+
+```
+[Shell] $O test-gate $DIR test-coverage-delta '{"passed": true/false, "tdd_mode": "prompt|strict", "uncovered": [...], "output": "..."}'
+```
 
 **d-2) 单元测试**（所有规模，有测试框架时执行）：
 
@@ -389,6 +424,8 @@ SubAgent 执行失败 或 测试门最终未通过：
 ```
 
 **h-1) 错误恢复重试**（`$O fail` 输出的 corrections < 2 时执行）
+
+**Systematic Debugging 注入**（`tdd_mode` ≠ `off` 时自动激活）：当失败类型为测试失败或运行时错误时，error-fixer prompt 中追加 `references/prompt-templates.md`「错误修复 — Systematic Debugging」段落，要求先做四阶段根因分析（Root Cause → Pattern → Hypothesis → Failing Test + Fix），再执行修复。`tdd_mode=off` 时使用标准 error-fixer 模板（不注入）。
 
 spawn error-fixer SubAgent 修复后，**先内联编译检查**确认修复有效：
 ```

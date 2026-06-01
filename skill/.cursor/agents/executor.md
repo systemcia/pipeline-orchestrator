@@ -48,6 +48,12 @@ model: inherit
 
 - 按 task 描述自行判断修改范围，不强制限制技术栈
 
+## 实现纪律（编排层按 `tdd_mode` 动态注入）
+
+当编排层在 prompt 中注入 `## 实现纪律 — TDD` 段落时，**MUST** 遵守其中的 RED-GREEN-REFACTOR 循环和分批实现要求。未注入时按常规流程实现。
+
+此段落由 `references/prompt-templates.md`「实现纪律 — TDD」模板填充 `{implementation_discipline}` 占位符生成，executor 不需要自行判断是否开启。
+
 ## 完成前自检（DoD）
 
 - [ ] 验收标准全部满足
@@ -55,6 +61,7 @@ model: inherit
 - [ ] 无遗留 TODO/FIXME
 - [ ] 未修改任务范围外的文件
 - [ ] 未创建无关文档/测试数据
+- [ ] TDD 模式下：每个新行为有对应测试文件（编排层 d-1.5 将校验）
 
 ## 输出契约
 

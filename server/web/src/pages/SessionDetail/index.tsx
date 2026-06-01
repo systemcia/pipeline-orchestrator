@@ -14,7 +14,7 @@ import {
   getSession, getSessionMD, getSnapshots, getLogs,
   validateSession, getLessons, getImprovements,
   getAnalysisTrace, getDesignBrief, completeSession,
-  getOpenSpecInfo, repairSessionDocs,
+  getOpenSpecInfo, repairSessionDocs, generateReview,
 } from '@/services/api';
 import type { ValidationResult, OpenSpecInfo } from '@/services/api';
 import { usePipelineEvents } from '@/services/websocket';
@@ -45,6 +45,9 @@ export default function SessionDetail() {
   const [loading, setLoading] = useState(true);
   const [repairing, setRepairing] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [generatingReview, setGeneratingReview] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -117,6 +120,48 @@ export default function SessionDetail() {
       message.error('操作失败');
     } finally {
       setCompleting(false);
+    }
+  };
+
+  const handleGenerateReview = async () => {
+    if (!id || generatingReview) return;
+    setGeneratingReview(true);
+    try {
+      await generateReview(id);
+      message.info('正在生成回顾分析，请稍候...');
+      let retries = 0;
+      const poll = setInterval(async () => {
+        retries++;
+        try {
+          const [lessons, improvements] = await Promise.all([
+            getLessons(id).catch(() => ''),
+            getImprovements(id).catch(() => ''),
+          ]);
+          if ((lessons && lessons.length > 10) || (improvements && improvements.length > 10)) {
+            clearInterval(poll);
+            pollRef.current = null;
+            setLessonsMd(lessons || '');
+            setImprovementsMd(improvements || '');
+            setGeneratingReview(false);
+            message.success('回顾分析已生成');
+          } else if (retries >= 20) {
+            clearInterval(poll);
+            pollRef.current = null;
+            setGeneratingReview(false);
+            message.warning('生成超时，请手动刷新查看');
+          }
+        } catch {
+          if (retries >= 20) {
+            clearInterval(poll);
+            pollRef.current = null;
+            setGeneratingReview(false);
+          }
+        }
+      }, 3000);
+      pollRef.current = poll;
+    } catch (e) {
+      setGeneratingReview(false);
+      message.error('生成回顾失败: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -319,14 +364,26 @@ export default function SessionDetail() {
       key: 'lessons',
       label: '经验教训',
       children: lessonsMd ? <MarkdownViewer content={lessonsMd} /> : (
-        <Alert type="info" message="暂无经验教训" showIcon />
+        <div style={{ textAlign: 'center', padding: '40px 0' }}>
+          <Alert type="info" message="暂无经验教训" showIcon style={{ marginBottom: 16 }} />
+          <Button type="primary" loading={generatingReview} onClick={handleGenerateReview}>
+            生成回顾分析
+          </Button>
+        </div>
       ),
     },
     {
       key: 'improvements',
       label: '改进建议',
       children: improvementsMd ? <MarkdownViewer content={improvementsMd} /> : (
-        <Alert type="info" message="暂无改进建议" showIcon />
+        <div style={{ textAlign: 'center', padding: '40px 0' }}>
+          <Alert type="info" message="暂无改进建议" showIcon style={{ marginBottom: 16 }} />
+          {!lessonsMd && (
+            <Button type="primary" loading={generatingReview} onClick={handleGenerateReview}>
+              生成回顾分析
+            </Button>
+          )}
+        </div>
       ),
     },
   ];

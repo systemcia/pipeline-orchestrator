@@ -5,7 +5,7 @@ interface ApiResponse<T> {
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
-  if (!headers.has('Content-Type')) {
+  if (options?.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -16,7 +16,14 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    let msg = `HTTP ${res.status}`;
+    try {
+      const parsed = JSON.parse(text);
+      msg = parsed.error || parsed.message || msg;
+    } catch {
+      if (text) msg = text;
+    }
+    throw new Error(msg);
   }
 
   const contentType = res.headers.get('content-type') || '';

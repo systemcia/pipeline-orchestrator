@@ -59,6 +59,12 @@ gate_mode: auto
 # 可选：性能基准测试命令（配置后在 Phase 3 后置检查中执行）
 # benchmark_cmd: "go test -bench=. -benchtime=1s ./..."
 
+# TDD 实现纪律（Superpower 三件套：tdd-discipline + systematic-debugging + verification-guard）
+# off:    不注入 TDD 纪律（默认，兼容无测试基础设施的项目）
+# prompt: executor prompt 注入 TDD 引导 + 测试覆盖 delta 软检查（SOFT_FAIL）
+# strict: 强制 TDD — 无对应测试文件则 HARD_FAIL，error-fixer 注入 systematic-debugging
+tdd_mode: off
+
 # Dry-Run 模式（仅执行 Phase 0+1 预览，不实施）
 dry_run: false
 
@@ -90,9 +96,10 @@ profiles:
     # 紧急修复：最小流程，跳过探索/提案/经验反哺/CCC/质量门A
     # 触发词：需求包含"紧急""hotfix""urgent""线上问题"
     skip_phases: [1, 5]
-    skip_steps: [rag-inject, ccc-2, quality-gate-a, quality-gate-b, snapshot, e2e-test, unit-test]
+    skip_steps: [rag-inject, ccc-2, quality-gate-a, quality-gate-b, snapshot, e2e-test, unit-test, test-coverage-delta]
     gates: []
     force_serial: true
+    tdd_mode: off         # 紧急修复强制关闭 TDD
 
   thorough:
     # 大规模+高质量要求：全流程 + 额外检查
@@ -100,6 +107,7 @@ profiles:
     skip_phases: []
     skip_steps: []
     gates: [after-propose, after-implement, after-review]
+    tdd_mode: strict      # 高质量模式强制严格 TDD
 
 # ── 编排拓扑声明（机器可校验的 Phase 骨架）──────────────────
 # 补充层：Phase Markdown 文件是 LLM 的详细执行指令，topology 是引擎的校验骨架。
@@ -231,6 +239,12 @@ topology:
           type: shell
           description: "O10 Lint 静态分析"
           gate_type: hard
+        - id: test-coverage-delta
+          step_id: test-coverage-delta
+          type: shell
+          description: "d-1.5 测试覆盖 delta 检查（tdd_mode≠off 时）"
+          gate_type: soft     # prompt 模式 SOFT_FAIL；strict 模式编排层升级为 HARD_FAIL
+          skip_when: "tdd_mode == off"
         - id: unit-test
           step_id: unit-test
           type: shell

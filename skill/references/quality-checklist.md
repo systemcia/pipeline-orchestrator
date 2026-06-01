@@ -35,6 +35,16 @@
 | P03 | 性能基础 | 数据库查询 | 新增/修改的数据库查询无 N+1 问题、有合理索引、无全表扫描（涉及 DB 操作时）。 | both |
 | P04 | 性能基础 | 并发与 I/O | 可并行的 I/O 操作未串行阻塞；批量操作优于逐条循环（涉及网络/文件 I/O 时）。 | task |
 
+## TDD 纪律检查（`tdd_mode` ≠ `off` 时启用）
+
+以下检查项仅在项目 `.pipeline-orchestrator.yaml` 的 `tdd_mode` 为 `prompt` 或 `strict` 时判定；`tdd_mode=off` 时一律 **N/A**。
+
+| ID | 分类 | 检查项 | 判定说明 | 级别 |
+|----|------|--------|----------|------|
+| TDD01 | 测试纪律 | 新增行为有测试 | 本次新增的函数/方法/API 端点在变更集或同目录下存在对应测试文件和用例。 | task |
+| TDD02 | 测试纪律 | 测试含有效断言 | 测试用例包含实际断言（`assert`/`expect`/`require`），非空 `t.Skip`、空函数体或纯日志输出。 | task |
+| TDD03 | 测试纪律 | 测试命名描述行为 | 测试函数/方法名描述被测行为（如 `TestRetry_SucceedsAfter3Failures`），而非泛化命名（`Test1`/`TestFunc`）。 | task |
+
 ## 可选: 性能基准测试（项目配置 `benchmark_cmd` 时启用）
 
 当 `.pipeline-orchestrator.yaml` 配置了 `benchmark_cmd` 字段时，Phase 3 后置检查在 d-3 回归测试后执行：

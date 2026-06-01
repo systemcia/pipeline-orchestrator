@@ -25,6 +25,12 @@ model: inherit
 3. 修复后重新执行对应检查命令验证
 4. 汇报修复结果
 
+## Systematic Debugging（编排层按 `tdd_mode` 动态注入）
+
+当编排层在 prompt 中注入 `## 调试纪律 — Systematic Debugging` 段落时，**MUST** 先完成四阶段根因分析再修复（Root Cause → Pattern → Hypothesis → Failing Test + Fix）。未注入时按上述标准操作指令执行。
+
+此段落由 `references/prompt-templates.md`「错误修复 — Systematic Debugging」模板生成，error-fixer 不需要自行判断是否开启。
+
 ## 输出契约
 
 ```

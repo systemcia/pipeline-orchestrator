@@ -42,6 +42,18 @@
 
 **静态检查**：`skill_routes` 须为列表且每条含非空 `skill`、且仅配置一种**主**匹配器（`task_id` / `openspec_task_id` / `description_regex` 三选一）；`file-pattern`、`task-type` 若作为附加字段出现，不得与「多主匹配器并存」混同。可执行仓库内校验脚本或按 `openspec` change `structured-skill-routing` 验收。
 
+## Superpower 三件套联动
+
+`tdd_mode` ≠ `off` 时，编排层自动在 SubAgent prompt 中注入对应纪律段落（见 `references/prompt-templates.md`）：
+
+| Superpower Skill | 注入目标 | 激活条件 | 注入方式 |
+|------------------|----------|----------|----------|
+| `tdd-discipline` | executor | `tdd_mode=prompt\|strict` + 项目有测试框架 + 非 `task-type: test` | `{implementation_discipline}` 占位符 |
+| `systematic-debugging` | error-fixer | `tdd_mode=prompt\|strict` + 失败类型为测试/运行时错误 | prompt 追加「调试纪律」段落 |
+| `verification-guard` | 编排层内置 | 始终激活 | d-1/d-2 证据链（先 Shell 再 test-gate） |
+
+三件套不作为 Skill 路由命中（不经 `skill_routes` / `custom_routes` / 内置关键词），而是由编排层根据 `tdd_mode` 配置**直接注入**对应 prompt 段落。Skill 路由表中的 1~5 优先级不受影响。
+
 ## 内置路由（通用）
 
 | 任务类型 | 匹配关键词 | Skill 名称 | Agent 类型 |
