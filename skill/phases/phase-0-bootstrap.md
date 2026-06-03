@@ -13,12 +13,18 @@
 
 ```
 [Shell] PROJECT_ID=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-[Shell] # 检测同名冲突：如果 SESSIONS_ROOT 下已有同名但不同路径的项目，追加 hash
 [Shell] FULL_PATH=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-[Shell] EXISTING=$(ls -d /opt/pipeline-orchestrator/sessions/$PROJECT_ID 2>/dev/null)
-[Shell] if [ -n "$EXISTING" ] && [ -f "$EXISTING/../.project_path" ] && [ "$(cat "$EXISTING/../.project_path")" != "$FULL_PATH" ]; then PROJECT_ID="${PROJECT_ID}-$(echo "$FULL_PATH" | md5sum | cut -c1-4)"; fi
+[Shell] SESSIONS_ROOT=${PIPELINE_SESSIONS_DIR:-/opt/pipeline-orchestrator/sessions}
+```
+
+**同名冲突检测**：不同仓库路径可能产生相同 `basename`（如 `~/proj-a/api` 和 `~/proj-b/api` 都解析为 `api`）。检测方式：扫描已有 session 的 `state.json` 中 `project_id` 对应的实际工作目录：
+
+```
+[Shell] CONFLICT=false; for d in "$SESSIONS_ROOT/$PROJECT_ID"/pipe-*/state.json; do [ -f "$d" ] || continue; SESSION_CWD=$(python3 -c "import json;s=json.load(open('$d'));print(s.get('cwd',''))" 2>/dev/null); if [ -n "$SESSION_CWD" ] && [ "$SESSION_CWD" != "$FULL_PATH" ]; then CONFLICT=true; break; fi; done; if [ "$CONFLICT" = "true" ]; then PROJECT_ID="${PROJECT_ID}-$(echo "$FULL_PATH" | md5sum | cut -c1-4)"; fi
 [Shell] echo "PROJECT_ID=$PROJECT_ID"
 ```
+
+> **降级**：若 `state.json` 无 `cwd` 字段（旧版引擎），碰撞检测跳过，使用原始 `PROJECT_ID`。引擎 `init` 应在 `state.json` 中记录 `cwd` 字段（值为当前工作目录绝对路径）。
 
 `$PROJECT_ID` 在后续 Phase 2 的 `$O init --project $PROJECT_ID` 中使用。
 

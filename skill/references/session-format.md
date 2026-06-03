@@ -46,6 +46,7 @@
   "mode": "normal",
   "profile": "default | small | hotfix | thorough | null",
   "project_id": "项目标识（自动检测或手动指定，用于多项目隔离）",
+  "cwd": "创建 session 时的工作目录绝对路径（用于 PROJECT_ID 碰撞检测）",
   "openspec_change": "change-name 或 null",
   "openspec_repo_root": "含 openspec/changes 的仓库根路径或 null（与 PIPELINE_OPENSPEC_REPO_ROOT 对应）",
   "parallel_strategy": "ownership | integrator 或 null（并行合并策略摘要）",

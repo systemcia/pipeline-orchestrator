@@ -6,11 +6,13 @@
 
 - **6 Phase 流水线**：Bootstrap → Propose → Session → Execute → Complete → Feedback
 - **9 个专职 SubAgent**：planner / executor / quality-reviewer / evaluator / consistency-checker / error-fixer / codebase-researcher / tester / session-analyst
-- **三级质量门**：提案自检 → task 级审查 → 全局审查
-- **上下文工程**：分层预算 + 动态裁剪，每个 SubAgent 拿到「刚好够」的上下文
-- **CCC 一致性校验**：防止 AI 自由发挥偏离需求
-- **规模自适应**：小需求跳过重流程，大需求全保障
+- **三级质量门**：提案自检（PA01-PA14）→ task 级审查（质量门 B）→ 全局审查（质量门 C）
+- **上下文工程**：分层注入 + O8 规模分档预算 + 动态裁剪，每个 SubAgent 拿到「刚好够」的上下文
+- **CCC 一致性校验**：CCC-2（代码 vs task）+ CCC-merge（并行合并语义冲突）
+- **规模自适应 + Profile**：4 个内置 Profile（default/small/hotfix/thorough），支持自定义模板
+- **TDD 纪律集成**：三级 `tdd_mode`（off/prompt/strict），渐进式引入测试先行
 - **断点续传**：任何时候中断，下次自动从断点恢复
+- **OpenSpec 模式**：支持从 OpenSpec 变更提案驱动编排
 
 ## 前提条件
 
@@ -99,7 +101,7 @@ scripts/orchestrate.sh init "需求" '[...]' # 初始化 Session
 | 2 | Session | 创建 Session + 上下文注入 | ✓ | ✓ | ✓ |
 | 3 | Execute | 逐 Task 执行 + 测试门 + 质量门 B | ✓ | ✓ | ✓ |
 | 4 | Complete | 全局审查 + 质量门 C + 归档 | ✓ | ✓ | ✓ |
-| 5 | Feedback | 经验反哺 + 改进建议 | 跳过 | 5a | 5a+5b |
+| 5 | Feedback | 经验反哺 + 改进建议 | 跳过 | 总结 | 总结+趋势 |
 
 ## 环境变量
 

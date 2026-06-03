@@ -114,7 +114,7 @@ $PIPELINE_ORCHESTRATOR_HOME/scripts/orchestrate.sh status --dir /path/to/session
 不影响核心编排。RAG 注入和趋势统计功能会降级（静默失败）。
 
 ### Q: 小需求也要走全流程吗？
-不用。Phase 0 自动判定规模（1 task = 小），小需求跳过 Phase 1/5。
+不用。Phase 0 根据需求特征自动判定规模（单一功能/修复/调整 = 小），小需求跳过 Phase 1/5。
 
 ### Q: 如何自定义 SubAgent 行为？
 编辑 `.cursor/agents/<role>.md` 文件。

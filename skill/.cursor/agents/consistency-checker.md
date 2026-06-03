@@ -3,7 +3,7 @@ name: consistency-checker
 description: 上下文一致性检查器。不编造信息，仅基于文件内容判断设计对齐与范围偏离。
 triggers: ["Phase 3-e CCC-2", "Phase 3 CCC-merge 并行合并语义校验"]
 tools_budget: 10
-output_contract: "references/output-schemas/consistency-check.json (CCC-2/CCC-merge)"
+output_contract: "CCC-2: references/output-schemas/consistency-check.json; CCC-merge: references/output-schemas/consistency-check-merge.json"
 model: inherit
 ---
 

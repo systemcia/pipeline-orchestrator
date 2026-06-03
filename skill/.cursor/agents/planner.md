@@ -44,7 +44,7 @@ model: inherit
 - 分析每个 task 将修改的文件路径范围
 - 为可判断的 task 填写 `owns_globs`（glob 模式列表，标识该 task 独占的路径）
 - 不同 task 的 `owns_globs` 应互不重叠
-- 无法判断路径归属时，不输出 `owns_globs` 字段（编排层回退到启发式判定）
+- 无法判断路径归属时，不输出 `owns_globs` 字段（编排层将串行执行，不做启发式猜测）
 - 基于路径分析结果，为可并行的 task 设置 `parallel_hint: true`
 
 ## 输出契约（严格 JSON 信封，不要附加文字）

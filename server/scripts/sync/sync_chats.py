@@ -102,14 +102,52 @@ def extract_text_from_content(content) -> str:
     return str(content) if content else ""
 
 
+_THINKING_LINE_RE = re.compile(
+    r"^(?:"
+    r"(?:The user (?:wants|is |asks|said|request|mention|provided|has ))"
+    r"|(?:Let me (?:start|first|check|read|think|look|trace|analyze|examine|verify|now|re-|understand|plan|proceed|dig|search|investigate))"
+    r"|(?:Now (?:I'm |I need|I have|I understand|I can|I see|I'll|let me|looking|checking|that I))"
+    r"|(?:I (?:need to|should|will|can see|don't|see that|was |have |just |also |notice|'ll |think ))"
+    r"|(?:Looking at (?:the|this|my|how))"
+    r"|(?:(?:Actually|Wait|OK|Hmm),? (?:let me|I |the |looking|this))"
+    r"|(?:From the (?:screenshot|image|log|output|code|data))"
+    r"|(?:(?:So|Since|Based on|For) (?:the |this |my |I ))"
+    r"|(?:(?:This|That|These|They) (?:is |are |means|shows|indicates|suggests|looks|want|have |need))"
+    r"|(?:(?:First|Next|Then|Also|However|Overall),? (?:I |let|the |we |it ))"
+    r"|(?:\d+\.\s+(?:Read |Check |Verify |Trace |Find |Look |The |For |Get |Run |Then ))"
+    r"|(?:##\s*(?:Phase|Finding|Step|Root Cause|Pattern|Summary))"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def strip_thinking(text: str) -> str:
-    """剥离模型思考/推理块，只保留最终输出"""
+    """剥离模型思考/推理块，只保留最终输出。
+
+    两层过滤：
+    1. 带标签的思考块 (<thinking>...</thinking> 等)
+    2. 无标签的英文推理段落（连续 3+ 行匹配推理模式的段落）
+    """
     if not text:
         return ""
     for tag in ("antml:thinking", "thinking", "antThinking"):
         pattern = rf"<{tag}>.*?</{tag}>"
         text = re.sub(pattern, "", text, flags=re.DOTALL)
-    return text.strip()
+
+    paragraphs = re.split(r"\n{2,}", text)
+    kept = []
+    for para in paragraphs:
+        lines = [l for l in para.split("\n") if l.strip()]
+        if not lines:
+            continue
+        first = lines[0].strip()
+        if first.startswith("```"):
+            kept.append(para)
+            continue
+        if _THINKING_LINE_RE.search(first):
+            continue
+        kept.append(para)
+    return "\n\n".join(kept).strip()
 
 
 def strip_system_tags(text: str) -> str:
@@ -1373,20 +1411,24 @@ def _map_category_to_daily(cat: str) -> str:
 
 
 def _pair_messages(sess: Session) -> List[Tuple[str, str]]:
-    """将消息按 user→assistant 配对"""
+    """将消息按 user→assistant(s) 配对，合并同一轮次的所有 assistant 回复。
+    
+    工具调用密集的对话中，一次用户提问后会有多个 assistant 消息
+    （每次工具调用返回后 assistant 继续回复）。全部合并为一条完整回复。
+    """
     pairs = []
     i = 0
     msgs = sess.messages
     while i < len(msgs):
         if msgs[i].role == "user":
             user_text = msgs[i].text
-            ai_text = ""
-            if i + 1 < len(msgs) and msgs[i + 1].role == "assistant":
-                ai_text = msgs[i + 1].text
-                i += 2
-            else:
+            ai_parts = []
+            i += 1
+            while i < len(msgs) and msgs[i].role == "assistant":
+                if msgs[i].text.strip():
+                    ai_parts.append(msgs[i].text)
                 i += 1
-            pairs.append((user_text, ai_text))
+            pairs.append((user_text, "\n".join(ai_parts)))
         else:
             i += 1
     return pairs

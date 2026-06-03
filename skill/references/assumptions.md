@@ -6,7 +6,7 @@
 
 | ID | 假设内容 | 来源规则 | 检验条件（何时可废弃） |
 |----|---------|---------|---------------------|
-| H01 | 单次 SubAgent 无法可靠处理 >5 文件的一致性校验 | CCC-2 内联/spawn 阈值 ≤5（Phase 3-e） | 模型能在单次会话中准确校验 7+ 文件的设计一致性（需 benchmark） |
+| H01 | 单次 SubAgent 无法可靠处理 >5 文件的一致性校验 | CCC-2 内联/spawn 阈值 ≤5（`phases/phase-3-execute.md` §e「文件数阈值：5」）；质量门 B 内联阈值 ≤3 文件（§f） | 模型能在单次会话中准确校验 7+ 文件的设计一致性（需 benchmark） |
 | H02 | 执行类 SubAgent 会被过长上下文干扰（注意力衰减） | 防失忆协议摘要策略、token 预算 | 模型在 100k+ token 上下文中仍保持 >95% 指令遵循率 |
 | H03 | AI 自审代码存在自信偏差（Generator 夸赞自身产出） | 质量门 B/C 审查与开发 SubAgent 分离 | 模型自审准确率与独立审查持平（需对照 benchmark） |
 | H04 | 编译检查属于轻量操作，不需 SubAgent 上下文隔离 | 编译检查主 Agent 内联（3-d） | （已验证有效，保留为基线假设） |
@@ -14,12 +14,13 @@
 | H06 | 百分比评分不可客观复现，需逐条 PASS/FAIL | 质量清单（quality-checklist.md）+ 提案清单（proposal-checklist.md） | （已验证有效并已推广至 evaluator，保留为基线假设） |
 | H07 | session.md 当前格式足以承载 LLM 所需的全部语义上下文 | session.md 模板（session-format.md） | 出现 LLM 因 session.md 信息不足导致的重复错误模式（需 session-analysis.md 统计） |
 | H08 | quality-checklist.md 的检查项适用于所有语言和项目类型 | 质量门 B/C 通用 checklist | 某类项目的 N/A 率持续 > 50%，说明需要语言/项目特定的 checklist |
-| H09 | 单次 chat context 内编排超过 15 次 Shell/Task 调用后，LLM 编排质量显著下降 | Context Reset 协议（protocols.md） | 模型在 30+ 次调用后仍保持 >90% 指令遵循率 |
+| H09 | 单次 chat context 内 Phase 3 编排超过 30 次 Shell/Task 调用后，LLM 编排质量显著下降 | Context Reset 协议（`context-engineering.md`「Context Reset 协议」，Phase 3 内计数，阈值 30） | 模型在 Phase 3 内 50+ 次调用后仍保持 >90% 指令遵循率 |
 | H10 | RAG 搜索返回的历史经验能有效减少重复错误 | RAG 注入（Phase 1b / 3-a） | 关闭 RAG 后的错误率与开启时无统计显著差异（需 A/B 对照） |
 | H11 | 需求拆解需要专职角色（planner），不能由通用 SubAgent 兼任 | planner.md（Phase 1d） | 通用 SubAgent 的需求拆解质量（验收标准完整性、依赖准确性）与 planner 无统计差异 |
 | H12 | 轻量审查（≤3 项/文件）可由主 Agent 内联执行而不损失准确性 | quality-reviewer Delta 重检内联（≤3）+ 质量门 B 内联（≤3 文件）+ CCC-2 内联（≤5 文件，H01） | 内联审查的 FAIL 漏检率 > 独立 SubAgent 审查的 10%（需 A/B 对照） |
 | H13 | executor 声称 SUCCESS 时不一定满足了 task 中所有验收标准 | 验收标准验证 d-0.5（Phase 3） | executor 的验收标准自检准确率 > 95%（即 d-0.5 很少发现 executor 遗漏的验收项） |
 | H14 | executor 执行中发现的偏离信息不会主动传递给后续 task | 计划偏离检测 j（Phase 3）+ session.md 上下文增量注入 | executor 输出中自动包含对后续 task 有指导意义的结构化发现报告 |
+| H15 | 无 `owns_globs` 时 LLM 启发式并行判定的准确率不足以承担误判成本 | Phase 3 并行判定 P3（无 `owns_globs` 时串行，不做启发式猜测） | LLM 启发式并行判定准确率 > 90% 且误判后的修复成本可控 |
 
 ## 维护机制
 

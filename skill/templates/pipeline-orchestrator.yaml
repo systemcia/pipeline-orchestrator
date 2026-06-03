@@ -236,6 +236,7 @@ topology:
           description: "编译检查"
           gate_type: hard
         - id: lint-check
+          step_id: lint
           type: shell
           description: "O10 Lint 静态分析"
           gate_type: hard
@@ -280,7 +281,7 @@ topology:
           description: "$O update-session 更新上下文"
         - id: context-reset-check
           type: decision
-          description: "context_usage >= 15 时建议 Reset"
+          description: "Phase 3 内 context_usage >= 30 时建议 Reset"
       transitions:
         - to: 4
           condition: "ALL_DONE"
@@ -367,7 +368,7 @@ topology:
     - id: tester
       file: .cursor/agents/tester.md
       phases: [3]
-      tools_budget: 20
+      tools_budget: 30
       on_demand: true           # task-type: test 时由编排层路由，替代 executor
     - id: session-analyst
       file: .cursor/agents/session-analyst.md

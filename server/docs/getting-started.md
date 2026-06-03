@@ -45,7 +45,7 @@ npm install && npm run build
 mkdir -p /opt/pipeline-orchestrator/sessions
 
 # 环境变量（写入 ~/.bashrc 或 ~/.zshrc）
-export PIPELINE_ORCHESTRATOR_HOME=$(pwd)
+export PIPELINE_ORCHESTRATOR_HOME=$(cd ../skill && pwd)
 export PIPELINE_SESSIONS_DIR=/opt/pipeline-orchestrator/sessions
 ```
 
@@ -128,6 +128,8 @@ GET  /api/analytics/ai-tracking           # AI 代码追踪
 GET  /api/knowledge/rag-search?q=...      # RAG 语义搜索
 GET  /api/knowledge/stats                 # 知识库统计
 GET  /api/knowledge/token-stats           # Token 消耗统计
+GET  /api/knowledge/gems                  # 提示词精华
+GET  /api/search/*                        # 全文搜索
 ```
 
 详细 Schema 见 [database-schema.md](database-schema.md)。

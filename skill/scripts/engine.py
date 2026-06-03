@@ -507,6 +507,7 @@ def cmd_init(args):
         "created_at": _now(),
         "updated_at": _now(),
         "config": _load_project_config(),
+        "cwd": os.getcwd(),
         "tasks": tasks,
         "rag_queries": [],
         "consistency_checks": [],

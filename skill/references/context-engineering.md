@@ -153,13 +153,17 @@ budget = max(floor_tier, min(cap_tier, base_by_deps))
 
 ### context_usage 指标
 
-`context_usage` = 当前会话中已执行的 Shell + Task 调用总数（主 Agent 自行计数）。
+`context_usage` = **Phase 3 进入后**已执行的 Shell + Task 调用总数（主 Agent 自行计数）。Phase 0~2 的调用**不计入**——这些阶段以探索和初始化为主，不产生大量 SubAgent 输出，对 context 质量影响有限。
+
+**计数起点**：Phase 3 的首次 `$O next` 调用开始计数。
 
 ### 触发条件
 
 Phase 3 每批 task 后置检查全部完成后，检查 `context_usage`：
-- `context_usage ≥ 15` → 触发 Reset 建议
-- `context_usage < 15` → 不触发，继续下一批
+- `context_usage ≥ 30` → 触发 Reset 建议
+- `context_usage < 30` → 不触发，继续下一批
+
+> **阈值依据**：每个 task 的完整后置检查链（a→b→c→d-0~j）约消耗 10-16 次 Shell/Task 调用（视规模和门控启用情况）。阈值 30 允许 2-3 个 task 完整执行后再触发，平衡了编排连续性与 context 质量。
 
 ### 触发前持久化检查
 

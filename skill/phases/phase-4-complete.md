@@ -1,5 +1,20 @@
 # Phase 4: 完成
 
+## 4-pre. 完成前置检查（MUST，所有规模）
+
+进入 Phase 4 前，从 `$DIR/state.json` 读取 task 统计：
+```
+[Shell] python3 -c "import json;s=json.load(open('$DIR/state.json'));ts=s['tasks'];c=sum(1 for t in ts if t['status']=='COMPLETED');f=sum(1 for t in ts if t['status']=='FAILED');sk=sum(1 for t in ts if t['status']=='SKIPPED');print(f'COMPLETED={c} FAILED={f} SKIPPED={sk} TOTAL={len(ts)}')"
+```
+
+- **全部 FAILED/SKIPPED（无任何 COMPLETED task）** → 跳过 4a/4b/4c 质量门和概要展示（无有效产出可审查），直接进入 4c-2 用户验收，向用户展示：
+  > 「所有 {total} 个 task 均未成功完成（FAILED: {failed}, SKIPPED: {skipped}）。
+  > 失败详情见 `$DIR/pending.md`。
+  > - **回滚** → 终止 session，代码保持 Phase 3 前状态
+  > - **部分返工** → 指定需要重试的 task，回到 Phase 3
+  > - **终止** → 标记 session 为 FAILED 并结束」
+- **有 COMPLETED task** → 正常继续 4a
+
 ## 4a. E2E 测试门（中/大规模执行，项目有集成测试框架时）
 
 测试未通过为 **SOFT_FAIL**（E2E 依赖外部环境，不稳定性高；前序门已保障代码质量）。记 pending 时决策点使用 `soft:` 前缀。
@@ -31,6 +46,8 @@ echo "E2E_FW=$E2E_FW"
 ## 4b. 质量门 C — 全局审查（中/大规模执行）
 
 审查未通过为 **SOFT_FAIL**；记 pending 时决策点使用 `soft:` 前缀。
+
+**变更文件列表来源**：从 `$DIR/state.json` 中所有 COMPLETED task 的 `session.md`「当前阶段详情」段落中提取各 task 的变更文件列表，取并集去重。或直接执行 `git diff --name-status` 对比 session 首个 task 的 `PRE_SHA` 基线与当前 HEAD。
 
 **文件列表裁剪**：当变更文件总数 > 15 时，按「新增(A) > 修改(M) > 接口文件(*_api/*_handler/*_router) > 其余」优先级取前 15 个，剩余记为 `...及 N 个其他文件`。避免 SubAgent 因文件过多导致审查质量下降。
 
@@ -119,4 +136,10 @@ echo "E2E_FW=$E2E_FW"
 [Shell] $O advance-phase --dir $DIR
 ```
 
-→ 大规模继续 Phase 5，中规模执行 Phase 5a，小规模结束
+**按规模分流**：
+- **大规模** → 继续 Phase 5（5a + 5b）
+- **中规模** → 继续 Phase 5（仅 5a）
+- **小规模** → 跳过 Phase 5，直接推进到结束：
+  ```
+  [Shell] $O advance-phase --dir $DIR --to 5   # Phase 5→SKIPPED，session 结束
+  ```

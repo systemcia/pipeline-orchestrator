@@ -91,7 +91,7 @@ pipeline-orchestrator（编排层 — 只调度不执行）
 
 **分层治理宪法**（Rules / Agent / Skill / OpenSpec 边界与冲突优先级）→ `references/governance-constitution.md`。
 
-**编排假设清单** → `references/assumptions.md`（H01-H12，定期检验，过时则简化对应规则）。
+**编排假设清单** → `references/assumptions.md`（H01-H15，定期检验，过时则简化对应规则）。
 
 ---
 
@@ -121,25 +121,31 @@ pipeline-orchestrator（编排层 — 只调度不执行）
 | Phase 1 用户审批 | — | 跳过 | ✓ | ✓ |
 | Phase 2 创建 Session | — | ✓(2-小) | ✓(2A/2B) | ✓(2A/2B) |
 | Phase 3 RAG 注入 | `rag-inject` | ✓† | ✓ | ✓ |
-| Phase 3 产出校验 | — | ✓ | ✓ | ✓ |
-| Phase 3 验收标准验证 | `acceptance-check` | ✓ | ✓ | ✓ |
-| Phase 3 编译检查 | `compile` | ✓ | ✓ | ✓ |
-| Phase 3 测试覆盖 delta | `test-coverage-delta` | ✓‡ | ✓‡ | ✓‡ |
-| Phase 3 单元测试 | `unit-test` | ✓*† | ✓* | ✓* |
-| Phase 3 增量回归测试 | `regression-test` | 跳过 | 跳过 | ✓* |
-| Phase 3 CCC-2 | `ccc-2` | 跳过 | ✓ | ✓ |
-| Phase 3 质量门 B | `quality-gate-b` | 跳过 | 跳过 | ✓ |
-| Phase 3 快照 | `snapshot` | 跳过 | 跳过 | ✓ |
-| Phase 3 计划偏离检测 | `plan-drift` | 跳过 | ✓ | ✓ |
-| Phase 4 E2E 测试 | `e2e-test` | 跳过 | ✓* | ✓* |
-| Phase 4 质量门 C + 总结 | — | 跳过 | ✓ | ✓ |
+| Phase 3 产出校验(d-0) | — | ✓ | ✓ | ✓ |
+| Phase 3 验收标准验证(d-0.5) | `acceptance-check` | ✓ | ✓ | ✓ |
+| Phase 3 依赖安装(O9) | `dep-install` | ✓ | ✓ | ✓ |
+| Phase 3 编译检查(d-1) | `compile` | ✓ | ✓ | ✓ |
+| Phase 3 Lint(O10) | `lint` | ✓§ | ✓§ | ✓§ |
+| Phase 3 测试覆盖 delta(d-1.5) | `test-coverage-delta` | ✓‡ | ✓‡ | ✓‡ |
+| Phase 3 单元测试(d-2) | `unit-test` | ✓*† | ✓* | ✓* |
+| Phase 3 增量回归测试(d-3) | `regression-test` | 跳过 | 跳过 | ✓* |
+| Phase 3 性能基准(d-4) | `benchmark` | ✓¶ | ✓¶ | ✓¶ |
+| Phase 3 CCC-2(e) | `ccc-2` | 跳过 | ✓ | ✓ |
+| Phase 3 质量门 B(f) | `quality-gate-b` | 跳过 | 跳过 | ✓ |
+| Phase 3 快照(g) | `snapshot` | 跳过 | 跳过 | ✓ |
+| Phase 3 计划偏离检测(j) | `plan-drift` | 跳过 | ✓ | ✓ |
+| Phase 4 完成前置检查(4-pre) | — | ✓ | ✓ | ✓ |
+| Phase 4 E2E 测试(4a) | `e2e-test` | 跳过 | ✓* | ✓* |
+| Phase 4 质量门 C + 总结(4b/4c) | — | 跳过 | ✓ | ✓ |
 | Phase 4 完成+归档 | — | ✓ | ✓ | ✓ |
-| Phase 5 经验总结与改进建议(5a，session-analysis.md) | — | 跳过 | ✓ | ✓ |
+| Phase 5 经验总结与改进建议(5a) | — | 跳过 | ✓ | ✓ |
 | Phase 5 趋势(5b) | — | 跳过 | 跳过 | ✓ |
 
 *\* = 有测试框架时执行*
 *† = 小规模新增：RAG 注入避免重复已知错误；单测（有框架时）是最低成本的正确性保障*
 *‡ = 仅 `tdd_mode` ≠ `off` 时执行（由 `.pipeline-orchestrator.yaml` 配置控制）*
+*§ = 有对应 lint 配置文件和 CLI 时执行*
+*¶ = 仅 `.pipeline-orchestrator.yaml` 配置 `benchmark_cmd` 时执行*
 
 **Profile 叠加规则**：Profile 的 `skip_steps` 与规模裁剪矩阵取并集——两者任一标记跳过则跳过。Step ID 用于 Profile 配置中的 `skip_steps` 字段引用。无 Step ID 的步骤（如 Phase 0、Phase 2、Phase 4 完成）为必选步骤，不受 Profile 裁剪。
 

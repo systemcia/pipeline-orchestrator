@@ -19,7 +19,7 @@ model: inherit
 - `$DIR/telemetry.jsonl`（`start`/`done`/`fail` 事件链；成本字段无则标 N/A）
 - `references/telemetry-anti-patterns-v2.md`（反模式对照，可选）
 - `agent-transcripts/`（历史 JSONL，用于轨迹与趋势）
-- `references/assumptions.md`（编排假设 H01-H10）
+- `references/assumptions.md`（编排假设 H01-H15）
 
 ## 分析能力（合并自双角色）
 

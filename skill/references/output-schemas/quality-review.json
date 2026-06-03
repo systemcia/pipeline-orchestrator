@@ -11,7 +11,7 @@
         "type": "object",
         "required": ["id", "result"],
         "properties": {
-          "id": { "type": "string", "pattern": "^[CSETMAP]\\d{2}$", "description": "检查项 ID，如 C01/S01/E01/T01/M01/A01/P01" },
+          "id": { "type": "string", "pattern": "^(PA|TDD|[CSETMAP])\\d{2}$", "description": "检查项 ID，如 C01/S01/E01/T01/M01/A01/P01（质量门）、PA01（提案门）或 TDD01（TDD 纪律）" },
           "result": { "type": "string", "enum": ["PASS", "FAIL", "N/A"] },
           "evidence": { "type": "string", "description": "FAIL 时必填：file:line + 说明；N/A 时填不适用理由" }
         }
