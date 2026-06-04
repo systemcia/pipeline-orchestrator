@@ -80,13 +80,17 @@ export const getAnalytics = (startDate: string, endDate: string) =>
   request<AnalyticsOverview>(`/api/analytics/overview?start_date=${startDate}&end_date=${endDate}`);
 
 export interface AITrackingSummary {
-  total_code_hashes: number;
-  daily_usage: { date: string; model: string; source: string; code_hashes: number }[];
-  model_distribution: { model: string; count: number }[];
-  daily_total: { date: string; sessions: number }[];
+  total_lines_added: number;
+  total_lines_removed: number;
+  total_sessions: number;
+  total_files: number;
+  total_tokens: number;
+  avg_daily_added: number;
   peak_day: string;
-  peak_count: number;
-  avg_daily: number;
+  peak_added: number;
+  mode_distribution: { mode: string; count: number }[];
+  daily: { date: string; lines_added: number; lines_removed: number; sessions: number; files: number }[];
+  actual_range: { start: string; end: string };
 }
 
 export const getAITracking = (startDate: string, endDate: string) =>

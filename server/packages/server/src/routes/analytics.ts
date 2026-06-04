@@ -2,9 +2,8 @@ import type { FastifyPluginAsync, FastifyReply } from 'fastify';
 import type { AnalyticsDailyPoint, AnalyticsDaySummary, AnalyticsProjectStat, AnalyticsSkillStat } from '@pipeline/shared';
 import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
-import { getDb, openPipelineDb } from '../db.js';
+import { openPipelineDb } from '../db.js';
 import { defaultSessionsRoot } from './session-detail.js';
 
 type ST = { date: string; sessions: number; tasks: number; failed: number };
@@ -260,44 +259,56 @@ async function feedbackProposals(root: string) {
   return list;
 }
 
-function aiTrackingUsage(start: string, end: string) {
-  const path = join(homedir(), '.cursor', 'ai-tracking', 'ai-code-tracking.db');
-  if (!existsSync(path)) throw new Error('ai-tracking db not available');
-  const db = getDb(path);
+type WsRow = { d: string; sessions: number; added: number; removed: number; files: number; tokens: number };
+
+function aiCodeStats(start: string, end: string) {
+  const db = openPipelineDb();
+  if (!db) return null;
   try {
-    const sql = `SELECT date(createdAt/1000, 'unixepoch', 'localtime') as d, model, source, count(*) as cnt FROM ai_code_hashes WHERE date(createdAt/1000, 'unixepoch', 'localtime') BETWEEN ? AND ? GROUP BY d, model, source ORDER BY d`;
-    const rows = db.prepare(sql).all(start, end) as { d: string; model: string; source: string; cnt: number }[];
-    let total = 0;
-    const mm = new Map<string, number>();
-    const dm = new Map<string, number>();
-    const daily_usage: { date: string; model: string; source: string; code_hashes: number }[] = [];
-    for (const r of rows) {
-      daily_usage.push({ date: r.d, model: r.model, source: r.source, code_hashes: r.cnt });
-      total += r.cnt;
-      mm.set(r.model, (mm.get(r.model) ?? 0) + r.cnt);
-      dm.set(r.d, (dm.get(r.d) ?? 0) + r.cnt);
-    }
-    let peakDay = '',
-      peakCount = 0;
-    const daily_total: AnalyticsDailyPoint[] = [];
-    for (const [date, cnt] of dm) {
-      daily_total.push({ date, sessions: cnt });
-      if (cnt > peakCount) {
-        peakCount = cnt;
-        peakDay = date;
+    const sql = `SELECT date(created_at/1000, 'unixepoch', 'localtime') as d,
+      count(*) as sessions, sum(total_lines_added) as added,
+      sum(total_lines_removed) as removed, sum(files_changed_count) as files,
+      sum(token_count) as tokens
+    FROM workspace_sessions
+    WHERE total_lines_added > 0 AND date(created_at/1000, 'unixepoch', 'localtime') BETWEEN ? AND ?
+    GROUP BY d ORDER BY d`;
+    let rows = db.prepare(sql).all(start, end) as WsRow[];
+    if (rows.length === 0) {
+      const range = db.prepare(
+        `SELECT min(date(created_at/1000,'unixepoch','localtime')) as mn, max(date(created_at/1000,'unixepoch','localtime')) as mx FROM workspace_sessions WHERE total_lines_added > 0`,
+      ).get() as { mn: string | null; mx: string | null } | undefined;
+      if (range?.mn && range?.mx) {
+        rows = db.prepare(sql).all(range.mn, range.mx) as WsRow[];
       }
     }
-    daily_total.sort((a, b) => a.date.localeCompare(b.date));
+    let totalAdded = 0, totalRemoved = 0, totalSessions = 0, totalFiles = 0, totalTokens = 0;
+    let peakDay = '', peakAdded = 0;
+    const daily: { date: string; lines_added: number; lines_removed: number; sessions: number; files: number }[] = [];
+    for (const r of rows) {
+      totalAdded += r.added; totalRemoved += r.removed;
+      totalSessions += r.sessions; totalFiles += r.files; totalTokens += r.tokens;
+      daily.push({ date: r.d, lines_added: r.added, lines_removed: r.removed, sessions: r.sessions, files: r.files });
+      if (r.added > peakAdded) { peakAdded = r.added; peakDay = r.d; }
+    }
+    const first = rows[0] as WsRow | undefined;
+    const last = rows[rows.length - 1] as WsRow | undefined;
+    const actualStart = first?.d ?? start;
+    const actualEnd = last?.d ?? end;
+    const modeRows = db.prepare(
+      `SELECT unified_mode as mode, count(*) as cnt FROM workspace_sessions WHERE total_lines_added > 0 AND date(created_at/1000,'unixepoch','localtime') BETWEEN ? AND ? GROUP BY unified_mode ORDER BY cnt DESC`,
+    ).all(actualStart, actualEnd) as { mode: string; cnt: number }[];
     return {
-      total_code_hashes: total,
-      daily_usage,
-      model_distribution: [...mm.entries()]
-        .map(([model, count]) => ({ model, count }))
-        .sort((a, b) => b.count - a.count),
-      daily_total,
+      total_lines_added: totalAdded,
+      total_lines_removed: totalRemoved,
+      total_sessions: totalSessions,
+      total_files: totalFiles,
+      total_tokens: totalTokens,
+      avg_daily_added: daily.length > 0 ? Math.round(totalAdded / daily.length) : 0,
       peak_day: peakDay,
-      peak_count: peakCount,
-      avg_daily: dm.size > 0 ? total / dm.size : 0,
+      peak_added: peakAdded,
+      mode_distribution: modeRows.map((m) => ({ mode: m.mode || 'unknown', count: m.cnt })),
+      daily,
+      actual_range: { start: actualStart, end: actualEnd },
     };
   } finally {
     db.close();
@@ -343,7 +354,9 @@ export const analyticsPlugin: FastifyPluginAsync = async (app) => {
   app.get('/analytics/ai-tracking', (req, reply) => {
     const q = req.query as Qs;
     try {
-      return sendOk(reply, aiTrackingUsage(q.start_date ?? defStart(), q.end_date ?? defEnd()));
+      const data = aiCodeStats(q.start_date ?? defStart(), q.end_date ?? defEnd());
+      if (!data) return sendErr(reply, new Error('pipeline.db not available'));
+      return sendOk(reply, data);
     } catch (e) {
       return sendErr(reply, e);
     }

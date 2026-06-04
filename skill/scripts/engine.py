@@ -836,18 +836,28 @@ def _quality_hint(state: dict, tid: str) -> str:
     return "inline"
 
 
+def _resolve_git_cwd(session_dir: str, state: dict) -> str | None:
+    """从 state.json 的 cwd 字段获取项目 git 仓库路径，回退到 session_dir。"""
+    candidate = state.get("cwd") or session_dir
+    r = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True, text=True, cwd=candidate)
+    if r.returncode == 0:
+        return r.stdout.strip()
+    print(f"WARN: snapshot skipped — '{candidate}' is not inside a git repo", file=sys.stderr)
+    return None
+
+
 def _auto_snapshot(session_dir: str, tid: str, state: dict) -> str | None:
     """task 完成后自动创建 git 快照，返回 tag 名或 None。"""
     if "snapshot" in (state.get("skip_steps") or []):
         return None
-    git_check = subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"],
-        capture_output=True, text=True, cwd=session_dir)
-    if git_check.returncode != 0:
+    git_cwd = _resolve_git_cwd(session_dir, state)
+    if git_cwd is None:
         return None
     session_id = state.get("id", "unknown")
     tag_name = f"pipeline/{session_id}/after-{tid}"
-    subprocess.run(["git", "tag", "-f", tag_name], capture_output=True, text=True)
+    subprocess.run(["git", "tag", "-f", tag_name], capture_output=True, text=True, cwd=git_cwd)
     task = _find_task(state, tid)
     task["snapshot_ref"] = tag_name
     ref_path = Path(session_dir) / "snapshots" / f"after-{tid}.ref"
@@ -1562,11 +1572,15 @@ def cmd_snapshot(args):
     """创建 git 快照并记录到 state.json。"""
     with _StateLock(args.dir):
         state = _read_state(args.dir)
+        git_cwd = _resolve_git_cwd(args.dir, state)
+        if git_cwd is None:
+            print("WARN: snapshot skipped — not inside a git repo", file=sys.stderr)
+            return
         session_id = state.get("id", "unknown")
         tag_name = f"pipeline/{session_id}/after-{args.tid}"
 
         subprocess.run(
-            ["git", "tag", "-f", tag_name], capture_output=True, text=True)
+            ["git", "tag", "-f", tag_name], capture_output=True, text=True, cwd=git_cwd)
 
         task = _find_task(state, args.tid)
         task["snapshot_ref"] = tag_name

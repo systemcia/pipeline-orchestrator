@@ -1248,9 +1248,9 @@ def _generate_daily_summaries(conn: sqlite3.Connection) -> int:
         # 按项目分组并分类
         proj_items = {}  # type: Dict[str, List[Dict]]
         categories = {
-            "requirements_discussion": 0, "coding": 0, "problem_solving": 0,
-            "refactoring": 0, "code_review": 0, "documentation": 0,
-            "testing": 0, "other": 0,
+            "debug": 0, "feature": 0, "refactor": 0, "architecture": 0,
+            "devops": 0, "documentation": 0, "testing": 0, "monitoring": 0,
+            "data": 0, "ai_workflow": 0, "config": 0, "other": 0,
         }
         for proj, query in work_rows:
             cat = classify_category(query)
@@ -1396,18 +1396,15 @@ def _sync_session_reviews(conn: sqlite3.Connection, dry_run: bool = False) -> in
 
 
 def _map_category_to_daily(cat: str) -> str:
-    """将 prompt category 映射到 daily_summaries 的 work_categories 键"""
+    """将 prompt category 映射到 daily_summaries 的 work_categories 键。
+    
+    新分类体系直接使用原始 category 名，不再做二次映射。
+    保留 analysis -> architecture 的合并（本质相近）。
+    """
     mapping = {
-        "debug": "problem_solving",
-        "feature": "coding",
-        "refactor": "refactoring",
-        "architecture": "requirements_discussion",
-        "devops": "other",
-        "analysis": "requirements_discussion",
-        "documentation": "documentation",
-        "other": "other",
+        "analysis": "architecture",
     }
-    return mapping.get(cat, "other")
+    return mapping.get(cat, cat)
 
 
 def _pair_messages(sess: Session) -> List[Tuple[str, str]]:

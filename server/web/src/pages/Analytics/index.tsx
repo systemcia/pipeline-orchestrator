@@ -19,24 +19,32 @@ import TokenStatsCard from '@/components/TokenStatsCard';
 const { RangePicker } = DatePicker;
 
 const categoryLabels: Record<string, string> = {
-  requirements_discussion: '需求讨论',
-  coding: '编码',
-  problem_solving: '问题排查',
-  refactoring: '重构',
-  code_review: '代码审查',
+  debug: '问题排查',
+  feature: '功能开发',
+  refactor: '重构优化',
+  architecture: '架构设计',
+  devops: '运维部署',
   documentation: '文档',
   testing: '测试',
+  monitoring: '监控告警',
+  data: '数据处理',
+  ai_workflow: 'AI 编排',
+  config: '配置管理',
   other: '其他',
 };
 
 const categoryColors: Record<string, string> = {
-  coding: '#1677ff',
-  problem_solving: '#ff4d4f',
-  requirements_discussion: '#52c41a',
-  refactoring: '#722ed1',
-  code_review: '#13c2c2',
+  feature: '#1677ff',
+  debug: '#ff4d4f',
+  refactor: '#722ed1',
+  architecture: '#52c41a',
+  devops: '#fa8c16',
   documentation: '#faad14',
   testing: '#eb2f96',
+  monitoring: '#13c2c2',
+  data: '#2f54eb',
+  ai_workflow: '#9254de',
+  config: '#87d068',
   other: '#8c8c8c',
 };
 

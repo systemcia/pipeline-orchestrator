@@ -208,13 +208,32 @@ SOURCE_RULES = [
 ]
 
 # ─── 提示词 category 分类关键词 ───
+# 规则按优先级从高到低排列，首次命中即返回
 
 CATEGORY_RULES = [
-    ("debug",         ["排查", "报错", "error", "bug", "修复", "fix", "panic", "异常", "failed"]),
-    ("feature",       ["实现", "添加", "新增", "开发", "implement", "add", "create", "feature"]),
-    ("refactor",      ["重构", "优化", "refactor", "optimize", "改进", "简化"]),
-    ("architecture",  ["架构", "设计", "方案", "architecture", "design", "模块"]),
-    ("devops",        ["部署", "deploy", "k8s", "docker", "pipeline", "ci/cd", "kae", "运维"]),
-    ("analysis",      ["分析", "调研", "analyze", "research", "对比", "评估"]),
-    ("documentation", ["文档", "readme", "注释", "comment", "doc"]),
+    ("debug",         ["排查", "报错", "error", "bug", "修复", "fix", "panic", "异常", "failed",
+                       "故障", "crash", "timeout", "超时", "不生效", "挂了", "500", "404",
+                       "失败了", "不工作"]),
+    ("feature",       ["实现", "添加", "新增", "开发", "implement", "add", "create", "feature",
+                       "新功能", "帮我写", "写一个", "接入", "对接", "支持"]),
+    ("refactor",      ["重构", "优化", "refactor", "optimize", "改进", "简化",
+                       "整理", "清理", "拆分", "合并", "抽取", "封装"]),
+    ("architecture",  ["架构", "设计", "方案", "architecture", "design", "技术选型", "评估方案"]),
+    ("devops",        ["部署", "deploy", "k8s", "docker", "ci/cd", "kae", "运维",
+                       "上线", "发布", "回滚", "灰度", "构建", "build", "编译",
+                       "systemd", "crontab", "定时任务", "常驻", "安装"]),
+    ("documentation", ["文档", "readme", "注释", "comment", "doc", "说明", "手册"]),
+    ("testing",       ["测试", "test", "单测", "e2e", "mock", "playwright", "集成测试",
+                       "用例", "覆盖率", "assert"]),
+    ("monitoring",    ["监控", "告警", "alert", "metric", "prometheus", "grafana",
+                       "指标", "巡检", "dashboard", "看板", "exporter", "采集",
+                       "label", "规则"]),
+    ("data",          ["数据", "统计", "report", "sync", "同步", "导入", "导出",
+                       "迁移", "migrate", "对账", "reconcili", "备份", "backup",
+                       "sql", "查询", "mysql", "redis", "clickhouse", "etcd",
+                       "表结构", "字段"]),
+    ("ai_workflow",   ["skill", "mcp", "agent", "prompt", "编排", "orchestrat",
+                       "openspec", "cursor", "llm", "模型", "知识库", "rag"]),
+    ("config",        ["配置", "config", "env", "yaml", "设置", "参数", "环境变量",
+                       "template", "模板"]),
 ]
