@@ -1,0 +1,54 @@
+# 预制编排模板 — cursor-cdp 融合编排引擎
+# 适用：cursor-cdp 与 Pipeline Orchestrator 融合，含远程 task dispatch + 知识库自动入库
+# 触发词：需求涉及"cursor-cdp 融合""远程 dispatch""知识入库""CDP 编排"
+# 提案: openspec/changes/cursor-cdp-pipeline-fusion
+# 用途: $O init <name> <tasks> --template cursor-cdp-fusion
+
+name: cursor-cdp-fusion
+description: >
+  cursor-cdp 融合编排引擎（大规模）：engine.py 远程 task 解析 + Phase 3 远程 dispatch
+  + Phase 5 知识库自动入库 + 管理台 API 去重 + cursor-cdp 适配 + 脚本化 E2E 验证
+
+agents:
+  explore:
+    - agent: codebase-researcher
+      scope: "cursor-cdp E2E 验证 + engine.py 解析逻辑 + run_skill 能力边界探索"
+      tags: [cdp, engine, verification, e2e]
+  implement:
+    parallel:
+      - agent: executor
+        scope: "## Engine Layer (engine.py [remote:xxx] 解析 + Phase 3/5 编排文档)"
+        tags: [engine, python, markdown, phase, remote-dispatch]
+      - agent: executor
+        scope: "## Server Layer (knowledge.ts 去重 + cursor-cdp 适配修改)"
+        tags: [server, typescript, api, cdp, knowledge]
+      - agent: executor
+        scope: "## E2E Tests (远程 task 生命周期 + 知识入库 脚本化验证)"
+        tags: [test, e2e, shell, python, integration]
+  review:
+    - agent: quality-reviewer
+
+phases: [0, 1, 2, 3, 4, 5]
+
+skip_steps: []
+
+gates: [after-propose, after-implement]
+
+skill_routes:
+  - task_id_prefix: "1."
+    agent: codebase-researcher
+    note: "cursor-cdp E2E 验证 + engine.py 现有逻辑探索（阻塞后续所有 task）"
+
+# 知识入库落地测试策略（两轮）：
+#   Round 1: 实现 Step 5d 后，用独立测试 session 验证入库流程
+#   Round 2: 本编排 Phase 5 执行时 dogfood——用刚实现的 5d 入库本次经验教训
+#
+# cursor-cdp 改动策略：
+#   E2E 验证后判断是否需要适配（run_skill 参数扩展、超时优化等）
+#   预留在 Server Layer scope 中，无改动则 task 标记 SKIP
+#
+# 脚本化 E2E 测试范围：
+#   - engine.py: [remote:xxx] 解析 → state.json type/remote_project 字段
+#   - remote task lifecycle: PRE-CHECK → DISPATCH → VERIFY → RECORD（需 Cursor CDP 端口）
+#   - knowledge API: content_hash 去重幂等性（直接 curl 验证）
+#   - Phase 5d: lessons.md → 结构化条目 → 入库（需 cursor-cdp + 管理台）

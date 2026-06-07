@@ -261,6 +261,14 @@ function ragSearch(db: DatabaseSync, q: string, limit: number, project: string):
 }
 
 export const knowledgePlugin: FastifyPluginAsync = async (app) => {
+  try {
+    const indexDb = openPipelineDbRW();
+    if (indexDb) {
+      indexDb.exec('CREATE INDEX IF NOT EXISTS idx_rag_chunks_content_hash ON rag_knowledge_chunks(content_hash)');
+      indexDb.close();
+    }
+  } catch {}
+
   app.get('/knowledge/stats', (_req, reply) => {
     return withDb(reply, (db) => {
       const stats = {
@@ -337,13 +345,24 @@ export const knowledgePlugin: FastifyPluginAsync = async (app) => {
     const userQuery = b.user_query;
     const aiResponseCore = b.ai_response_core || '';
     return withDbRW(reply, (db) => {
+      const contentHash = createHash('md5')
+        .update(userQuery + aiResponseCore)
+        .digest('hex');
+
+      const existing = db
+        .prepare(
+          'SELECT id FROM rag_knowledge_chunks WHERE content_hash = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+        )
+        .get(contentHash) as { id: string } | undefined;
+
+      if (existing) {
+        return ok(reply, { id: existing.id, deduplicated: true });
+      }
+
       const id = createHash('sha256')
         .update(Date.now() + ':' + userQuery)
         .digest('hex')
         .slice(0, 32);
-      const contentHash = createHash('md5')
-        .update(userQuery + aiResponseCore)
-        .digest('hex');
       db.prepare(
         `INSERT INTO rag_knowledge_chunks (id, session_id, chunk_index, project_name, user_query, ai_response_core, vector_text, has_code, timestamp, content_hash, source, main_topic, tags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).run(

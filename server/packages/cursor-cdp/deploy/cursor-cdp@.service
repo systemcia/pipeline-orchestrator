@@ -1,0 +1,19 @@
+[Unit]
+Description=Cursor CDP MCP Server (HTTP/SSE :18099) for %i
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=node dist/index.js --transport=http --port=18099
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cursor-cdp@%i
+
+[Install]
+WantedBy=multi-user.target

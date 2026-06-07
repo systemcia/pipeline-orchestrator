@@ -414,6 +414,17 @@ def cmd_init(args):
     tasks = []
     for i, t in enumerate(tasks_raw):
         tid = t.get("id", f"t{i + 1}")
+        name = t["name"]
+        remote_match = re.search(r'\[remote:([^:\]]+)(?::(\d+))?\]$', name)
+        if remote_match:
+            task_type = "remote"
+            remote_project = remote_match.group(1)
+            remote_port = int(remote_match.group(2)) if remote_match.group(2) else 9226
+            name = name[:remote_match.start()].rstrip()
+        else:
+            task_type = "local"
+            remote_project = None
+            remote_port = None
         if "depends_on" in t and t["depends_on"] is not None:
             deps = [name_to_id.get(d, d) for d in t["depends_on"]]
         elif i > 0:
@@ -422,13 +433,16 @@ def cmd_init(args):
             deps = []
         tasks.append({
             "id": tid,
-            "name": t["name"],
+            "name": name,
             "description": t.get("description", ""),
             "status": "PENDING",
             "tier": t.get("tier", f"tier-{i + 1}"),
             "skill": t.get("skill"),
             "agent_type": t.get("agent_type", ""),
             "depends_on": deps,
+            "type": task_type,
+            "remote_project": remote_project,
+            "remote_port": remote_port,
             "started_at": None,
             "completed_at": None,
             "error": None,
@@ -1129,11 +1143,58 @@ def cmd_validate(args):
             getattr(args, "openspec_repo_root", None),
         )
     )
+
+    warns: list[str] = []
+    tasks = state.get("tasks", [])
+    id_to_deps = {t["id"]: t.get("depends_on") or [] for t in tasks}
+    all_ids = set(id_to_deps.keys())
+    children: dict[str, set[str]] = {tid: set() for tid in all_ids}
+    for tid, deps in id_to_deps.items():
+        for dep in deps:
+            if dep in all_ids:
+                children[dep].add(tid)
+
+    def _reachable(start: str, end: str) -> bool:
+        visited: set[str] = set()
+        stack = [start]
+        while stack:
+            node = stack.pop()
+            if node in visited:
+                continue
+            visited.add(node)
+            for child in children.get(node, ()):
+                if child == end:
+                    return True
+                if child not in visited:
+                    stack.append(child)
+        return False
+
+    def _has_dependency_chain(a: str, b: str) -> bool:
+        return _reachable(a, b) or _reachable(b, a)
+
+    by_project: dict[str, list[str]] = {}
+    for t in tasks:
+        if t.get("type") == "remote" and t.get("remote_project"):
+            by_project.setdefault(t["remote_project"], []).append(t["id"])
+
+    for project, tids in by_project.items():
+        if len(tids) < 2:
+            continue
+        for i in range(len(tids)):
+            for j in range(i + 1, len(tids)):
+                if not _has_dependency_chain(tids[i], tids[j]):
+                    warns.append(
+                        f"remote_project '{project}' 的 task [{tids[i]}, {tids[j]}] "
+                        "无依赖链，可能导致并行冲突"
+                    )
+
     if errors:
         print("ERRORS:")
         for e in errors:
             print(f"  ✗ {e}")
-    else:
+    for w in warns:
+        print(f"WARN: {w}")
+    if not errors:
         print("✓ Session data integrity OK")
     sys.exit(1 if errors else 0)
 

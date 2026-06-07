@@ -1,0 +1,23 @@
+{
+  "name": "@pipeline-orchestrator/cursor-cdp",
+  "version": "0.1.0",
+  "description": "Cursor IDE remote control via Chrome DevTools Protocol - MCP Server",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "start:http": "node dist/index.js --transport=http --port=18099"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "async-mutex": "^0.5.0",
+    "chrome-remote-interface": "^0.34.0",
+    "zod": "^3.25 || ^4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}

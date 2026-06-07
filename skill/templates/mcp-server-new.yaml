@@ -1,0 +1,36 @@
+# 预制编排模板 — MCP Server 新建（CDP/外部协议类）
+# 适用：基于外部协议（CDP/WebSocket/gRPC）的新 MCP Server 包开发
+# 触发词：需求涉及"MCP Server""CDP""远程调用""新包""cursor-cdp"
+# 用途: $O init <name> <tasks> --template mcp-server-new
+# 提案: openspec/changes/cursor-remote-dispatch
+
+name: mcp-server-new
+description: 新建 MCP Server 包，含前置调研 + 日志 + 基础设施 + Tools 实现 + 注册部署，跳过自动化测试（需手动验证）
+
+agents:
+  implement:
+    parallel:
+      - agent: executor
+        scope: "## Infrastructure (DOM+Connection+Logger)"
+        tags: [infrastructure, connection, logger, cdp]
+      - agent: executor
+        scope: "## Session Control + Completion Detection"
+        tags: [session, completion, tools, cdp]
+  review:
+    - agent: quality-reviewer
+
+phases: [0, 1, 2, 3, 4, 5]
+
+skip_steps:
+  - unit-test
+  - regression-test
+  - e2e-test
+  - test-coverage-delta
+  - benchmark
+
+gates: [after-propose]
+
+skill_routes:
+  - task_id_prefix: "1."
+    agent: codebase-researcher
+    note: "前置调研（DOM 逆向、CDP 验证）需要探索能力"

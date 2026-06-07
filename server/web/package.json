@@ -9,9 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@pipeline/shared": "*",
     "@ant-design/icons": "^5.4.0",
+    "@pipeline/shared": "*",
+    "@types/dagre": "^0.7.54",
     "antd": "^5.21.0",
+    "dagre": "^0.8.5",
     "dayjs": "^1.11.13",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
