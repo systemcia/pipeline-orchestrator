@@ -65,6 +65,16 @@ gate_mode: auto
 # strict: 强制 TDD — 无对应测试文件则 HARD_FAIL，error-fixer 注入 systematic-debugging
 tdd_mode: off
 
+# ── 本地 Task 执行观测（cursor-cdp）──────────────────────────
+# 在本地 task 生命周期节点采集 IDE 状态，辅助 error-fixer 排查失败原因。
+# 依赖：cursor-cdp MCP Server 已注册；不可用时自动降级，不影响编排主流程。
+observability:
+  enabled: true                   # 总开关，false 时跳过所有观测动作
+  log_status_on_start: true       # task START 后调用 status() 记录 IDE 忙碌状态
+  screenshot_on_fail: true        # task FAIL 时截图归档
+  screenshot_on_complete: false   # task DONE 时截图（默认关闭，成功 task 价值低）
+  read_on_fail: true              # task FAIL 时读取最后对话内容，注入 error-fixer
+
 # Dry-Run 模式（仅执行 Phase 0+1 预览，不实施）
 dry_run: false
 

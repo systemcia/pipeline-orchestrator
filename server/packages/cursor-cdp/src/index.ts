@@ -6,6 +6,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import * as z from "zod/v4";
 
 import { ConnectionManager } from "./connection.js";
+import { loadConfig } from "./config.js";
 import { rawSendTool } from "./tools/raw-send.js";
 import { readTool } from "./tools/read.js";
 import { continueChatTool, runSkillTool } from "./tools/run-skill.js";
@@ -176,7 +177,7 @@ function createServer(manager: ConnectionManager): McpServer {
     },
     async ({ model, port }) =>
       runTool(manager, (m) =>
-        switchModelTool(m, buildInput<SwitchModelInput>({ model, port })),
+        switchModelTool(m, buildInput<SwitchModelInput>({ model, port }), loadConfig().allowed_models),
       ),
   );
 

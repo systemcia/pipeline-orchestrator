@@ -161,10 +161,29 @@ export async function statusTool(
   );
 }
 
+function isModelAllowed(model: string, allowedModels?: string[]): boolean {
+  if (!allowedModels || allowedModels.length === 0) return true;
+  const lower = model.toLowerCase();
+  return allowedModels.some((a) => {
+    const al = a.toLowerCase();
+    return lower.includes(al) || al.includes(lower);
+  });
+}
+
 async function switchModelToolInner(
   manager: ConnectionManager,
   input: SwitchModelInput,
+  allowedModels?: string[],
 ): Promise<SwitchModelOutput> {
+  if (!isModelAllowed(input.model, allowedModels)) {
+    const currentBefore = await getCurrentModel(manager, input.port);
+    return {
+      ok: false,
+      current: currentBefore,
+      error: `Model "${input.model}" blocked by allowed_models whitelist: [${allowedModels!.join(", ")}]`,
+    };
+  }
+
   return manager.withLock(async () => {
     const currentBefore = await getCurrentModel(manager, input.port);
 
@@ -200,25 +219,28 @@ async function switchModelToolInner(
         const menus = [...document.querySelectorAll(${JSON.stringify(SELECTORS.model.menu)})]
           .filter((menu) => menu.offsetParent !== null);
         const menu = menus[0];
-        if (!menu) return { found: false };
+        if (!menu) return { found: false, available: [] };
         const options = menu.querySelectorAll(${JSON.stringify(SELECTORS.model.option)});
+        const available = [];
         for (const opt of options) {
           const text = (opt.textContent || "").trim();
+          available.push(text);
           if (text.toLowerCase().includes(target)) {
             opt.click();
-            return { found: true, matched: text };
+            return { found: true, matched: text, available };
           }
         }
-        return { found: false };
+        return { found: false, available };
       })()`,
       input.port,
-    )) as { found: boolean; matched?: string } | null;
+    )) as { found: boolean; matched?: string; available: string[] } | null;
 
     if (!matchResult?.found) {
+      const avail = matchResult?.available?.slice(0, 20)?.join(", ") ?? "unknown";
       return {
         ok: false,
         current: currentBefore,
-        error: `Model not found: ${input.model}`,
+        error: `Model not found: ${input.model} | available: [${avail}]`,
       };
     }
 
@@ -231,9 +253,10 @@ async function switchModelToolInner(
 export async function switchModelTool(
   manager: ConnectionManager,
   input: SwitchModelInput,
+  allowedModels?: string[],
 ): Promise<SwitchModelOutput> {
   return withToolLog("switch_model", { ...input }, () =>
-    switchModelToolInner(manager, input),
+    switchModelToolInner(manager, input, allowedModels),
   );
 }
 

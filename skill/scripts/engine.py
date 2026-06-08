@@ -53,321 +53,55 @@ try:
 except ImportError:
     _yaml = None
 
+# ── 模块化拆分：导入子模块并建立兼容别名 ──────────────────────
+from _state import (
+    now as _now, state_path as _state_path, lock_path as _lock_path,
+    StateLock as _StateLock, read_state as _read_state, write_state as _write_state,
+    find_task as _find_task, duration_ms_since as _duration_ms_since,
+    duration_ms_between as _duration_ms_between, next_log_seq as _next_log_seq,
+    write_log as _write_log,
+)
+from _config import (
+    default_project as _default_project, state_project_id as _state_project_id,
+    strict_test_evidence_enabled as _strict_test_evidence_enabled,
+    orchestrator_home as _orchestrator_home, load_init_pipeline_yaml as _load_init_pipeline_yaml,
+    resolve_init_template_path as _resolve_init_template_path,
+    merge_orchestration_layers as _merge_orchestration_layers,
+    load_project_config as _load_project_config, load_pipeline_config as _load_pipeline_config,
+    CONFIG_FILENAME as _CONFIG_FILENAME, CONFIG_DEFAULTS as _CONFIG_DEFAULTS,
+    DEFAULT_PROJECT_ID,
+)
+from _session import (
+    count_section_entries as _count_section_entries,
+    archive_oldest_entry as _archive_oldest_entry,
+    split_stage_detail_task_entries as _split_stage_detail_task_entries,
+    compact_session_md_current_stage as _compact_session_md_current_stage,
+    compress_rag_section as _compress_rag_section,
+    update_session_section as _update_session_section,
+    rebuild_context_md as _rebuild_context_md,
+)
+from _telemetry import (
+    append_telemetry as _append_telemetry, notify_event as _notify_event,
+    audit_write as _audit_write, api_get as _api_get, API_BASE,
+)
+from _template import (
+    infer_template_fields as _infer_template_fields,
+    render_yaml_value as _render_yaml_value,
+    render_template_yaml as _render_template_yaml,
+    load_base_template as _load_base_template,
+)
+# ── 模块化拆分结束 ────────────────────────────────────────────
+
 SESSIONS_ROOT = Path(
     os.environ.get("PIPELINE_SESSIONS_DIR")
     or os.environ.get("PIPELINE_SESSIONS_ROOT")
     or "/opt/pipeline-orchestrator/sessions"
 )
-API_BASE = os.environ.get("PIPELINE_API_BASE", "http://localhost:18000/api").rstrip("/")
-
-# 无 --project 时的「当前项目」：环境变量 PIPELINE_PROJECT，否则 _default（与 init --project 默认一致）
-DEFAULT_PROJECT_ID = "_default"
-
-
-def _default_project() -> str:
-    v = (os.environ.get("PIPELINE_PROJECT") or "").strip()
-    return v if v else DEFAULT_PROJECT_ID
-
-
-def _state_project_id(state: dict) -> str:
-    """state 中的 project_id；旧 session 无字段时视为 _default。"""
-    pid = state.get("project_id")
-    if pid is not None and str(pid).strip():
-        return str(pid).strip()
-    return DEFAULT_PROJECT_ID
-
-
-def _strict_test_evidence_enabled() -> bool:
-    v = (os.environ.get("PIPELINE_STRICT_TEST_EVIDENCE") or "").strip().lower()
-    return v in ("1", "true", "yes", "on")
-
-
-_CONFIG_FILENAME = ".pipeline-orchestrator.yaml"
-_CONFIG_DEFAULTS = {
-    "max_parallel": 3,
-    "timeout_minutes": 10,
-    "gate_mode": "auto",
-    "automation_tier": 2,
-    "persist_small": False,
-    "snapshot_medium": False,
-    "dry_run": False,
-}
-
-
-def _orchestrator_home() -> Path:
-    """仓库根目录：PIPELINE_ORCHESTRATOR_HOME 或 engine.py 所在仓库。"""
-    env = (os.environ.get("PIPELINE_ORCHESTRATOR_HOME") or "").strip()
-    if env:
-        return Path(env).resolve()
-    return Path(__file__).resolve().parent.parent
-
-
-def _load_init_pipeline_yaml() -> dict:
-    """与 init 合并用：项目根 `.pipeline-orchestrator.yaml`，否则 bundled `templates/pipeline-orchestrator.yaml`。"""
-    root = os.environ.get("PIPELINE_PROJECT_ROOT", os.getcwd())
-    p = Path(root).resolve()
-    for d in [p, *p.parents]:
-        cfg_file = d / _CONFIG_FILENAME
-        if cfg_file.is_file():
-            if _yaml is None:
-                return {}
-            with open(cfg_file) as f:
-                return _yaml.safe_load(f) or {}
-    bundled = _orchestrator_home() / "templates" / "pipeline-orchestrator.yaml"
-    if bundled.is_file() and _yaml is not None:
-        with open(bundled) as f:
-            return _yaml.safe_load(f) or {}
-    return {}
-
-
-_ORCH_MERGE_KEYS = ("agents", "skip_steps", "gates", "skip_phases", "force_serial", "phases")
-
-
-def _resolve_init_template_path(spec: str) -> Path:
-    """模板名为 `templates/{name}.yaml`；已是存在的文件路径则直接使用。"""
-    s = (spec or "").strip()
-    if not s:
-        print("ERROR: --template 值为空", file=sys.stderr)
-        sys.exit(1)
-    cand = Path(s)
-    if cand.is_file():
-        return cand.resolve()
-    home = _orchestrator_home()
-    yaml_name = s if s.endswith((".yaml", ".yml")) else f"{s}.yaml"
-    rel = home / "templates" / yaml_name
-    if rel.is_file():
-        return rel.resolve()
-    print(f"ERROR: 模板未找到: {spec}（已尝试路径与 {rel}）", file=sys.stderr)
-    sys.exit(1)
-
-
-def _merge_orchestration_layers(
-    cfg: dict,
-    profile_name: str | None,
-    template_path: Path | None,
-) -> dict:
-    """合并顺序：模板 > profile > 默认值（按字段覆盖）。"""
-    out: dict = {"skip_steps": [], "gates": []}
-    profiles = cfg.get("profiles") or {}
-    pname = (profile_name or "").strip()
-    if pname:
-        prof = profiles.get(pname)
-        if isinstance(prof, dict):
-            for k in _ORCH_MERGE_KEYS:
-                if k in prof and prof[k] is not None:
-                    out[k] = copy.deepcopy(prof[k])
-    tpl_raw: dict = {}
-    if template_path is not None:
-        if _yaml is None:
-            print("ERROR: 使用 --template 需要安装 PyYAML", file=sys.stderr)
-            sys.exit(1)
-        with open(template_path) as f:
-            tpl_raw = _yaml.safe_load(f) or {}
-        if not isinstance(tpl_raw, dict):
-            print("ERROR: 模板 YAML 根必须为 mapping", file=sys.stderr)
-            sys.exit(1)
-        for k in _ORCH_MERGE_KEYS:
-            if k in tpl_raw and tpl_raw[k] is not None:
-                out[k] = copy.deepcopy(tpl_raw[k])
-        tid = tpl_raw.get("name")
-        out["template"] = str(tid if tid is not None else template_path.stem)
-    return out
-
-
-def _load_project_config() -> dict:
-    """从当前工作目录或 PIPELINE_PROJECT_ROOT 向上搜索配置文件。"""
-    root = os.environ.get("PIPELINE_PROJECT_ROOT", os.getcwd())
-    p = Path(root).resolve()
-    for d in [p, *p.parents]:
-        cfg_file = d / _CONFIG_FILENAME
-        if cfg_file.is_file():
-            if _yaml is None:
-                print(f"WARN: found {cfg_file} but PyYAML not installed, using defaults", file=sys.stderr)
-                return dict(_CONFIG_DEFAULTS)
-            with open(cfg_file) as f:
-                raw = _yaml.safe_load(f) or {}
-            merged = dict(_CONFIG_DEFAULTS)
-            for k in _CONFIG_DEFAULTS:
-                if k in raw:
-                    merged[k] = raw[k]
-            return merged
-    return dict(_CONFIG_DEFAULTS)
 
 
 # OpenSpec tasks.md 中行级 checkbox 任务 ID（如 1.1、2.3）
 _OPENSPEC_TASK_LINE = re.compile(r"^\s*-\s+\[[ xX]\]\s+(\d+\.\d+)\b")
 
-
-def _now() -> str:
-    return datetime.datetime.now().astimezone().isoformat()
-
-
-def _state_path(session_dir: str) -> Path:
-    return Path(session_dir) / "state.json"
-
-
-def _lock_path(session_dir: str) -> Path:
-    p = _state_path(session_dir).with_suffix(".lock")
-    p.touch(exist_ok=True)
-    return p
-
-
-class _StateLock:
-    """session state 的排他锁上下文管理器，保证 read-modify-write 原子性。"""
-
-    def __init__(self, session_dir: str):
-        self._dir = session_dir
-        self._lf = None
-
-    def __enter__(self):
-        self._lf = open(_lock_path(self._dir))
-        fcntl.flock(self._lf, fcntl.LOCK_EX)
-        return self
-
-    def __exit__(self, *exc):
-        fcntl.flock(self._lf, fcntl.LOCK_UN)
-        self._lf.close()
-        self._lf = None
-
-
-def _read_state(session_dir: str) -> dict:
-    p = _state_path(session_dir)
-    if not p.exists():
-        print(f"ERROR: {p} 不存在", file=sys.stderr)
-        sys.exit(1)
-    with open(p) as f:
-        return json.load(f)
-
-
-def _write_state(session_dir: str, state: dict):
-    state["updated_at"] = _now()
-    p = _state_path(session_dir)
-    tmp = p.with_suffix(".tmp")
-    try:
-        with open(tmp, "w") as f:
-            json.dump(state, f, indent=2, ensure_ascii=False)
-        tmp.rename(p)
-    except Exception:
-        tmp.unlink(missing_ok=True)
-        raise
-
-
-def _find_task(state: dict, tid: str) -> dict:
-    for t in state["tasks"]:
-        if t["id"] == tid:
-            return t
-    print(f"ERROR: task {tid} not found", file=sys.stderr)
-    sys.exit(1)
-
-
-def _next_log_seq(session_dir: str) -> str:
-    logs_dir = Path(session_dir) / "logs"
-    max_seq = 0
-    if logs_dir.is_dir():
-        for f in logs_dir.iterdir():
-            prefix = f.name[:3]
-            if f.suffix == ".md" and len(prefix) == 3 and prefix.isdigit():
-                max_seq = max(max_seq, int(prefix))
-    return f"{max_seq + 1:03d}"
-
-
-def _write_log(session_dir: str, tid: str, suffix: str = "") -> str:
-    """从 stdin 读取日志内容写入文件，返回相对路径。"""
-    if sys.stdin.isatty():
-        print("ERROR: 需要通过 stdin 传入日志内容 (echo '...' | $0 ...)", file=sys.stderr)
-        sys.exit(1)
-    log_seq = _next_log_seq(session_dir)
-    log_name = f"{log_seq}-{tid}{suffix}.md"
-    log_path = Path(session_dir) / "logs" / log_name
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(log_path, "w") as f:
-        f.write(sys.stdin.read())
-    return f"logs/{log_name}"
-
-
-def _duration_ms_since(started_at: str | None) -> int | None:
-    if not started_at:
-        return None
-    try:
-        t0 = datetime.datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-        t1 = datetime.datetime.now().astimezone()
-        if t0.tzinfo is None:
-            t0 = t0.replace(tzinfo=t1.tzinfo)
-        return max(0, int((t1 - t0).total_seconds() * 1000))
-    except (ValueError, TypeError):
-        return None
-
-
-def _duration_ms_between(start: str | None, end: str | None) -> int | None:
-    if not start or not end:
-        return None
-    try:
-        t0 = datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
-        t1 = datetime.datetime.fromisoformat(end.replace("Z", "+00:00"))
-        ref = datetime.datetime.now().astimezone()
-        if t0.tzinfo is None:
-            t0 = t0.replace(tzinfo=ref.tzinfo)
-        if t1.tzinfo is None:
-            t1 = t1.replace(tzinfo=ref.tzinfo)
-        return max(0, int((t1 - t0).total_seconds() * 1000))
-    except (ValueError, TypeError):
-        return None
-
-
-def _append_telemetry(session_dir: str, payload: dict) -> None:
-    """追加 JSONL 遥测；失败不阻塞主流程。"""
-    path = Path(session_dir) / "telemetry.jsonl"
-    rec = {"ts_iso": _now(), **payload}
-    try:
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    except OSError:
-        pass
-
-
-def _notify_event(session_dir, event_type, task_id=None, data=None):
-    """向管理台上报事件，失败时静默（不阻塞编排）。同时写本地审计日志。"""
-    session_id = os.path.basename(session_dir)
-
-    # 本地审计日志先于网络上报
-    audit_data = dict(data) if data else {}
-    if task_id:
-        audit_data["task_id"] = task_id
-    _audit_write(session_dir, session_id, event_type, audit_data or None)
-
-    url = f"{API_BASE}/events"
-    payload = {
-        "session_id": session_id,
-        "event_type": event_type,
-        "timestamp": _now(),
-    }
-    if task_id:
-        payload["task_id"] = task_id
-    if data:
-        payload["data"] = data
-    try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=2)
-    except Exception:
-        pass  # 管理台不可用时静默失败
-
-
-def _audit_write(session_dir: str, session_id: str, event: str, data: dict | None = None) -> None:
-    """追加写 session 级审计日志 $DIR/audit.jsonl。"""
-    path = Path(session_dir) / "audit.jsonl"
-    rec = {"ts": _now(), "session_id": session_id, "event": event}
-    if data:
-        rec["data"] = data
-    try:
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    except OSError as e:
-        print(f"WARN: audit write failed: {e}", file=sys.stderr)
 
 
 # ── 子命令实现 ──────────────────────────────────────────────
@@ -1220,250 +954,6 @@ def cmd_complete(args):
         print("OK: session -> COMPLETED ✓")
 
 
-def _api_get(path: str):
-    """调用管理台 GET API，返回 dat 字段。失败返回 None。"""
-    url = f"{API_BASE}{path}"
-    try:
-        with urllib.request.urlopen(url, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-            return data.get("dat", data)
-    except Exception as e:
-        print(f"WARN: API {url} failed: {e}", file=sys.stderr)
-        return None
-
-
-def _count_section_entries(text: str, section: str) -> int:
-    """统计 section 中以 '### ' 开头的条目数。"""
-    marker = f"## {section}"
-    if marker not in text:
-        return 0
-    idx = text.index(marker) + len(marker)
-    next_sec = text.find("\n## ", idx)
-    block = text[idx:next_sec] if next_sec != -1 else text[idx:]
-    return block.count("\n### ")
-
-
-def _archive_oldest_entry(session_dir: str, text: str, section: str) -> str:
-    """将 section 中最早的 '### ' 条目移到 archive-session.md，返回更新后的 text。"""
-    marker = f"## {section}"
-    idx = text.index(marker) + len(marker)
-    next_sec = text.find("\n## ", idx)
-    block = text[idx:next_sec] if next_sec != -1 else text[idx:]
-
-    first_entry = block.find("\n### ")
-    if first_entry == -1:
-        return text
-    second_entry = block.find("\n### ", first_entry + 1)
-    if second_entry == -1:
-        return text
-
-    entry_text = block[first_entry:second_entry]
-    archive_path = Path(session_dir) / "archive-session.md"
-    is_new = not archive_path.exists()
-    with open(archive_path, "a") as f:
-        if is_new:
-            f.write("# Archived Session Details\n")
-        f.write(entry_text + "\n")
-
-    new_block = block[:first_entry] + block[second_entry:]
-    after = text[next_sec:] if next_sec != -1 else ""
-    return text[:idx] + new_block + after
-
-
-def _split_stage_detail_task_entries(block: str) -> tuple[str, list[str]]:
-    """解析「当前阶段详情」section 正文：preamble（首个 ### Task 之前）与以 ### Task 开头的条目列表。"""
-    lines = block.split("\n")
-    preamble: list[str] = []
-    entries: list[str] = []
-    current: list[str] | None = None
-    for line in lines:
-        if line.startswith("### Task"):
-            if current is not None:
-                entries.append("\n".join(current))
-            current = [line]
-        else:
-            if current is None:
-                preamble.append(line)
-            else:
-                current.append(line)
-    if current is not None:
-        entries.append("\n".join(current))
-    preamble_text = "\n".join(preamble)
-    return preamble_text, entries
-
-
-def _compact_session_md_current_stage(session_dir: str) -> tuple[int, int] | None:
-    """session.md 总行数 > 300 时，在「当前阶段详情」内仅保留最近 3 个 ### Task 条目，其余追加到 archive-session.md。返回 (old_lines, new_lines) 或 None。"""
-    sm = Path(session_dir) / "session.md"
-    text = sm.read_text(encoding="utf-8", errors="replace")
-    old_lines = text.count("\n") + 1
-    if old_lines <= 300:
-        return None
-    marker = "## 当前阶段详情"
-    if marker not in text:
-        return None
-    i0 = text.index(marker)
-    start_body = i0 + len(marker)
-    next_sec = text.find("\n## ", start_body)
-    before = text[:i0]
-    after = text[next_sec:] if next_sec != -1 else ""
-    block = text[start_body:next_sec] if next_sec != -1 else text[start_body:]
-    preamble, entries = _split_stage_detail_task_entries(block)
-    if len(entries) <= 3:
-        return None
-
-    to_archive = entries[:-3]
-    kept = entries[-3:]
-    archive_path = Path(session_dir) / "archive-session.md"
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
-    is_new = not archive_path.exists()
-    with open(archive_path, "a", encoding="utf-8") as f:
-        if is_new:
-            f.write("# Archived Session Details\n\n")
-        for piece in to_archive:
-            f.write(piece.strip() + "\n\n")
-
-    if preamble:
-        new_block = preamble + "\n" + "\n\n".join(kept)
-    else:
-        new_block = "\n\n".join(kept)
-    if block.startswith("\n") and not new_block.startswith("\n"):
-        new_block = "\n" + new_block
-    new_text = before + marker + new_block + after
-    sm.write_text(new_text, encoding="utf-8")
-    new_lines = new_text.count("\n") + 1
-    return (old_lines, new_lines)
-
-
-def _compress_rag_section(text: str) -> str:
-    """压缩「历史经验」section，仅保留最近 2 次 RAG 查询。"""
-    marker = "## 历史经验"
-    if marker not in text:
-        return text
-    idx = text.index(marker) + len(marker)
-    next_sec = text.find("\n## ", idx)
-    block = text[idx:next_sec] if next_sec != -1 else text[idx:]
-
-    entries = block.split("\n### ")
-    if len(entries) <= 3:  # header + 2 entries
-        return text
-
-    kept = "\n### ".join(entries[-2:])
-    new_block = "\n### " + kept if kept else ""
-    after = text[next_sec:] if next_sec != -1 else ""
-    return text[:idx] + new_block + after
-
-
-def _update_session_section(session_dir: str, section: str, content: str,
-                            mode: str = "append"):
-    """更新 session.md 指定 section，含膨胀保护。"""
-    sm = Path(session_dir) / "session.md"
-    if not sm.exists():
-        print(f"ERROR: {sm} 不存在", file=sys.stderr)
-        sys.exit(1)
-
-    text = sm.read_text()
-    marker = f"## {section}"
-
-    if marker not in text:
-        text += f"\n{marker}\n{content}\n"
-    else:
-        idx = text.index(marker) + len(marker)
-        next_sec = text.find("\n## ", idx)
-        if mode == "replace":
-            before = text[:idx]
-            after = text[next_sec:] if next_sec != -1 else ""
-            text = before + f"\n{content}\n" + after
-        else:
-            insert_at = next_sec if next_sec != -1 else len(text)
-            text = text[:insert_at].rstrip() + f"\n{content}\n" + text[insert_at:]
-
-    if section == "当前阶段详情":
-        max_archive_rounds = 10
-        while _count_section_entries(text, section) > 5 and max_archive_rounds > 0:
-            prev = text
-            text = _archive_oldest_entry(session_dir, text, section)
-            max_archive_rounds -= 1
-            if text == prev:
-                break
-
-    total_lines = text.count("\n") + 1
-    if total_lines > 200:
-        text = _compress_rag_section(text)
-
-    sm.write_text(text)
-
-
-def _rebuild_context_md(session_dir: str) -> int:
-    """从 session.md 自动精简生成 context.md（≤ 3000 字符），返回字符数。
-
-    保留优先级（从高到低，按 references/context-engineering.md 裁剪优先级）：
-    1. 通用约束 — 永不裁剪
-    2. 用户原始需求 — 摘要（≤ 800 字符）
-    3. 关键约束和决策 — 最多 5 条
-    4. 最近 3 个 task 产出摘要
-    5. RAG — 最多 1 条
-    """
-    sm = Path(session_dir) / "session.md"
-    if not sm.exists():
-        return 0
-    text = sm.read_text(encoding="utf-8", errors="replace")
-
-    def _extract_section(t: str, name: str) -> str:
-        marker = f"## {name}"
-        if marker not in t:
-            return ""
-        idx = t.index(marker) + len(marker)
-        nxt = t.find("\n## ", idx)
-        return t[idx:nxt].strip() if nxt != -1 else t[idx:].strip()
-
-    budget = 3000
-    parts: list[str] = ["# Context (auto-generated)\n"]
-
-    requirement = _extract_section(text, "用户原始需求")
-    if len(requirement) > 800:
-        requirement = requirement[:797] + "..."
-    if requirement:
-        parts.append(f"## 需求摘要\n{requirement}\n")
-
-    constraints = _extract_section(text, "关键约束和决策")
-    if constraints:
-        lines = [l for l in constraints.split("\n") if l.strip()]
-        parts.append("## 关键约束\n" + "\n".join(lines[:5]) + "\n")
-
-    stage = _extract_section(text, "当前阶段详情")
-    if stage:
-        entries = stage.split("\n### ")
-        recent = entries[-3:] if len(entries) > 3 else entries
-        trimmed = "\n### ".join(recent)
-        if not trimmed.startswith("### ") and len(recent) > 0 and entries[0] != recent[0]:
-            trimmed = "### " + trimmed
-        parts.append(f"## 最近产出\n{trimmed}\n")
-
-    rag = _extract_section(text, "历史经验")
-    if rag:
-        rag_entries = rag.split("\n### ")
-        if len(rag_entries) > 1:
-            latest = rag_entries[-1]
-            parts.append(f"## 历史经验\n### {latest}\n")
-
-    result = "\n".join(parts)
-    over_budget = len(result) > budget
-    if over_budget:
-        result = result[:budget - 3] + "..."
-
-    ctx_path = Path(session_dir) / "context.md"
-    ctx_path.write_text(result, encoding="utf-8")
-    chars = len(result)
-    if over_budget:
-        print(
-            f"WARN: context.md ({chars} chars) hit budget ceiling ({budget}), "
-            "SubAgent 上下文可能被截断。考虑 context reset 或手动精简 session.md",
-            file=sys.stderr,
-        )
-    return chars
-
-
 def cmd_update_session(args):
     """更新 session.md 的指定 section，同步 session_md_lines，并自动重建 context.md。"""
     mode = getattr(args, "mode", "append")
@@ -1836,28 +1326,6 @@ def cmd_gate(args):
     print(f"OK: gate {gate_id} -> {decision}{report_hint}")
 
 
-def _load_pipeline_config(config_path: str | None = None) -> dict:
-    """加载 .pipeline-orchestrator.yaml 或 templates/pipeline-orchestrator.yaml。"""
-    try:
-        import yaml
-    except ImportError:
-        return {}
-    candidates = []
-    if config_path:
-        candidates.append(Path(config_path))
-    candidates.extend([
-        Path(".pipeline-orchestrator.yaml"),
-        Path("templates/pipeline-orchestrator.yaml"),
-    ])
-    for p in candidates:
-        if p.is_file():
-            try:
-                with open(p) as f:
-                    return yaml.safe_load(f) or {}
-            except Exception:
-                return {}
-    return {}
-
 
 _BUILTIN_SKILL_KEYWORDS: list[tuple[list[str], str]] = [
     (["优化", "review", "帮我改进"], "optimization-master"),
@@ -1919,237 +1387,15 @@ def cmd_validate_topology(args):
     _impl(args)
 
 
-# ── 模板生成 ─────────────────────────────────────────────────
-
-_VALID_STEP_IDS = frozenset([
-    "rag-inject", "compile", "unit-test", "regression-test",
-    "ccc-2", "quality-gate-a", "quality-gate-a-lite",
-    "quality-gate-b", "snapshot", "e2e-test",
-])
-_VALID_GATE_IDS = frozenset(["after-propose", "after-implement", "after-review"])
-
-_KEYWORD_RULES: list[tuple[list[str], dict]] = [
-    # (关键词列表, 推断字段补丁)
-    (["后端", "backend", "api", "服务端", "server"],
-     {"_backend": True}),
-    (["前端", "frontend", "react", "vue", "next.js", "nuxt"],
-     {"_frontend": True}),
-    (["全栈", "fullstack", "前后端"],
-     {"_frontend": True, "_parallel": True}),
-    (["不需要测试", "跳过测试", "no test", "skip test"],
-     {"_skip_test": True}),
-    (["严格", "高质量", "thorough", "strict"],
-     {"_strict": True}),
-    (["轻量", "快速", "minimal", "lightweight", "精简"],
-     {"_minimal": True}),
-    (["紧急", "hotfix", "urgent", "线上问题"],
-     {"_hotfix": True}),
-    (["串行", "serial", "顺序执行"],
-     {"force_serial": True}),
-    (["不需要反哺", "跳过反哺", "skip feedback", "no feedback"],
-     {"_skip_feedback": True}),
-    (["go", "golang"],
-     {"_tags_add": ["go"]}),
-    (["python", "fastapi", "django", "flask"],
-     {"_tags_add": ["python"]}),
-    (["java", "spring", "springboot"],
-     {"_tags_add": ["java"]}),
-    (["rust", "cargo"],
-     {"_tags_add": ["rust"]}),
-    (["typescript", "ts", "node", "express", "nestjs"],
-     {"_tags_add": ["typescript"]}),
-]
-
-
-_NEGATION_PREFIXES = ["不需要", "不用", "跳过", "没有", "无需", "no ", "skip ", "without "]
-
-
-def _infer_template_fields(desc: str) -> dict:
-    """从描述文本推断模板字段。"""
-    desc_lower = desc.lower()
-    flags: dict = {}
-    tags: list[str] = []
-
-    for keywords, patch in _KEYWORD_RULES:
-        matched = False
-        for kw in keywords:
-            pos = desc_lower.find(kw)
-            if pos < 0:
-                continue
-            negated = any(
-                desc_lower[max(0, pos - len(neg)):pos] == neg
-                for neg in _NEGATION_PREFIXES
-            )
-            if negated:
-                continue
-            matched = True
-            break
-        if not matched:
-            continue
-        for k, v in patch.items():
-            if k == "_tags_add":
-                tags.extend(v)
-            else:
-                flags[k] = v
-
-    has_frontend = flags.get("_frontend", False)
-    is_parallel = flags.get("_parallel", False)
-    is_strict = flags.get("_strict", False)
-    is_minimal = flags.get("_minimal", False)
-    is_hotfix = flags.get("_hotfix", False)
-    skip_test = flags.get("_skip_test", False)
-    skip_feedback = flags.get("_skip_feedback", False)
-    force_serial = flags.get("force_serial", False) or is_hotfix
-
-    # agents
-    if has_frontend and is_parallel:
-        be_tags = [t for t in tags if t not in ("react", "vue")]
-        fe_tags = ["frontend"] + [t for t in tags if t in ("react", "vue", "typescript")]
-        agents = {
-            "implement": {
-                "parallel": [
-                    {"agent": "executor", "scope": "## Backend Tasks",
-                     "tags": (be_tags or ["backend"])},
-                    {"agent": "executor", "scope": "## Frontend Tasks",
-                     "tags": fe_tags or ["frontend"]},
-                ]
-            },
-            "review": {"agent": "quality-reviewer"},
-        }
-    else:
-        agents = {
-            "implement": [{"agent": "executor"}],
-            "review": [{"agent": "quality-reviewer"}],
-        }
-
-    # skip_steps
-    skip_steps: list[str] = []
-    if not has_frontend:
-        skip_steps.append("e2e-test")
-    if skip_test:
-        skip_steps.extend(["unit-test", "e2e-test"])
-    if is_minimal or is_hotfix:
-        skip_steps.extend(["ccc-2", "quality-gate-b", "regression-test"])
-    if is_hotfix:
-        skip_steps.extend(["rag-inject", "quality-gate-a", "snapshot"])
-    skip_steps = sorted(set(s for s in skip_steps if s in _VALID_STEP_IDS))
-
-    # gates
-    if is_strict:
-        gates = ["after-propose", "after-implement", "after-review"]
-    elif is_hotfix or is_minimal:
-        gates = []
-    else:
-        gates = ["after-propose"]
-
-    # phases
-    phases = [0, 1, 2, 3, 4, 5]
-    if is_hotfix:
-        phases = [0, 2, 3, 4]
-    elif skip_feedback:
-        phases = [0, 1, 2, 3, 4]
-
-    result: dict = {
-        "agents": agents,
-        "phases": phases,
-        "skip_steps": skip_steps,
-        "gates": gates,
-    }
-    if force_serial:
-        result["force_serial"] = True
-    return result
-
-
-def _render_yaml_value(val, indent: int = 0) -> str:
-    """简易 YAML 渲染，避免依赖 PyYAML（模板结构固定，不需要通用序列化）。"""
-    prefix = "  " * indent
-    child_prefix = "  " * (indent + 1)
-    if isinstance(val, bool):
-        return "true" if val else "false"
-    if isinstance(val, (int, float)):
-        return str(val)
-    if isinstance(val, str):
-        if any(c in val for c in ":#{}[]&*!|>'\"%@`"):
-            return f'"{val}"'
-        return val
-    if isinstance(val, list):
-        if not val:
-            return "[]"
-        if all(isinstance(v, (str, int, float, bool)) for v in val):
-            inner = ", ".join(_render_yaml_value(v) for v in val)
-            return f"[{inner}]"
-        lines = []
-        for item in val:
-            if isinstance(item, dict):
-                first = True
-                for k, v in item.items():
-                    rendered = _render_yaml_value(v, indent + 2)
-                    if first:
-                        lines.append(f"{child_prefix}- {k}: {rendered}")
-                        first = False
-                    else:
-                        lines.append(f"{child_prefix}  {k}: {rendered}")
-            else:
-                lines.append(f"{child_prefix}- {_render_yaml_value(item)}")
-        return "\n" + "\n".join(lines)
-    if isinstance(val, dict):
-        lines = []
-        for k, v in val.items():
-            rendered = _render_yaml_value(v, indent + 1)
-            if rendered.startswith("\n"):
-                lines.append(f"{child_prefix}{k}:{rendered}")
-            else:
-                lines.append(f"{child_prefix}{k}: {rendered}")
-        return "\n" + "\n".join(lines)
-    return str(val)
-
-
-def _render_template_yaml(name: str, description: str, fields: dict) -> str:
-    """渲染完整模板 YAML 字符串。"""
-    lines = [
-        f"# 预制编排模板 — {description}",
-        f"# 由 $O gen-template 自动生成",
-        f"# 用途: $O init --template {name}",
-        "",
-        f"name: {name}",
-        f"description: {description}",
-    ]
-    for key in ("agents", "phases", "skip_steps", "gates", "force_serial"):
-        val = fields.get(key)
-        if val is None:
-            continue
-        rendered = _render_yaml_value(val, 0)
-        if rendered.startswith("\n"):
-            lines.append(f"\n{key}:{rendered}")
-        else:
-            lines.append(f"\n{key}: {rendered}")
-    return "\n".join(lines) + "\n"
-
-
-def _load_base_template(from_name: str) -> dict:
-    """加载已有模板作为基础。"""
-    if _yaml is None:
-        print("ERROR: --from 需要安装 PyYAML", file=sys.stderr)
-        sys.exit(1)
-    tpl_path = _orchestrator_home() / "templates" / f"{from_name}.yaml"
-    if not tpl_path.is_file():
-        tpl_path = _orchestrator_home() / "templates" / from_name
-    if not tpl_path.is_file():
-        print(f"ERROR: 基础模板未找到: {from_name}", file=sys.stderr)
-        sys.exit(1)
-    with open(tpl_path) as f:
-        base = _yaml.safe_load(f) or {}
-    return {k: v for k, v in base.items() if k in ("agents", "phases", "skip_steps", "gates", "force_serial")}
-
 
 def cmd_gen_template(args):
-    """根据描述文本推断并生成编排模板 YAML。"""
+    """根据描述文本推断并生成编排模板 YAML（委托 _template 模块）。"""
     name: str = args.name
     desc: str = args.desc or ""
     from_tpl: str | None = getattr(args, "from_template", None)
 
     if not re.match(r"^[a-z][a-z0-9-]*$", name):
-        print(f"ERROR: 模板名必须为 kebab-case（小写字母/数字/连字符）: {name}", file=sys.stderr)
+        print(f"ERROR: 模板名必须为 kebab-case: {name}", file=sys.stderr)
         sys.exit(1)
 
     out_dir = _orchestrator_home() / "templates"
@@ -2159,13 +1405,12 @@ def cmd_gen_template(args):
         sys.exit(1)
 
     if from_tpl:
-        fields = _load_base_template(from_tpl)
+        fields = _load_base_template(from_tpl, _orchestrator_home(), _yaml)
         if desc:
             overrides = _infer_template_fields(desc)
             for k, v in overrides.items():
                 if k == "skip_steps":
-                    merged = sorted(set(fields.get("skip_steps", []) + v))
-                    fields["skip_steps"] = merged
+                    fields["skip_steps"] = sorted(set(fields.get("skip_steps", []) + v))
                 elif k == "gates" and not v:
                     pass
                 else:

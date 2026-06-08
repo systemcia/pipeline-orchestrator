@@ -21,6 +21,8 @@ export interface CursorCdpConfig {
   /** CDP 主机地址，默认 localhost；WSL 连 Windows Cursor 时需设为 Windows 主机 IP */
   cdp_host: string;
   default_model?: string;
+  /** 允许使用的模型白名单（模糊匹配），为空则不限制 */
+  allowed_models?: string[];
   default_timeout: number;
   /** continue_chat 会话空闲超时（秒），超时后自动新建对话防止上下文污染，默认 3600 */
   session_timeout: number;

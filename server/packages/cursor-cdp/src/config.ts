@@ -60,6 +60,10 @@ function mergeWithDefaults(partial: Partial<CursorCdpConfig>): CursorCdpConfig {
     config.default_model = partial.default_model;
   }
 
+  if (partial.allowed_models !== undefined && Array.isArray(partial.allowed_models)) {
+    config.allowed_models = partial.allowed_models;
+  }
+
   if (partial.log_dir !== undefined) {
     config.log_dir = partial.log_dir;
   }

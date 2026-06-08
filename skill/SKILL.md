@@ -105,7 +105,10 @@ pipeline-orchestrator（编排层 — 只调度不执行）
 | 0 | `phases/phase-0-bootstrap.md` | 启动 + 规模判定 + Profile 选择 |
 | 1 | `phases/phase-1-propose.md` | 探索 + 提案（OpenSpec/增强编排统一流程） |
 | 2 | `phases/phase-2-session.md` | 创建 Session + 上下文注入 |
-| 3 | `phases/phase-3-execute.md` | 执行循环（状态机 + spawn + 后置检查） |
+| 3 | `phases/phase-3-execute.md` | 执行循环骨架（状态机 + 全局短路规则） |
+| 3.2 | `phases/phase-3-parallel.md` | 并行判定 + 接口先行 + spawn + 批次检查 |
+| 3.R | `phases/phase-3-remote.md` | 远程 task dispatch（cursor-cdp） |
+| 3.3 | `phases/phase-3-post-checks.md` | 后置检查链（d-0 ~ j 完整步骤） |
 | 4 | `phases/phase-4-complete.md` | 完成 + 全局审查 + 归档 |
 | 5 | `phases/phase-5-feedback.md` | 经验反哺 + 改进建议 + 趋势 |
 

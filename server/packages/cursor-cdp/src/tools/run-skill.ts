@@ -389,10 +389,18 @@ async function runSkillToolInner(
         ...portOpts(port),
       } as StatusInput);
       if (!status.model.toLowerCase().includes(resolvedModel.toLowerCase())) {
-        await switchModelTool(manager, {
-          model: resolvedModel,
-          ...portOpts(port),
-        } as SwitchModelInput);
+        const modelResult = await switchModelTool(
+          manager,
+          { model: resolvedModel, ...portOpts(port) } as SwitchModelInput,
+          config.allowed_models,
+        );
+        if (!modelResult.ok) {
+          throw new StepAbort({
+            status: "error",
+            error: modelResult.error ?? `Model switch failed: ${resolvedModel}`,
+            response: "",
+          });
+        }
       }
     }
 
