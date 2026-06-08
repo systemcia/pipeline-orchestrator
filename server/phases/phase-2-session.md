@@ -6,7 +6,7 @@
 [Shell] openspec instructions apply --change "<name>" --json
 ```
 
-读返回的 tasks，转换为 `$O init` 的 JSON 格式（保留 id/name/description/depends_on；**每项增加 `openspec_task_id`**，与 `openspec/changes/<name>/tasks.md` 中行首 **N.M** 一致，供 `$O validate` 漂移比对）：
+读返回的 tasks，转换为 `$O init` 的 JSON 格式（保留 id/name/description/depends_on；**每项增加 `openspec_task_id`**，与 `openspec/changes/<name>/tasks.md` 中行首 **N.M[.K]** 一致，供 `$O validate` 漂移比对）：
 
 ```
 [Shell] export PIPELINE_OPENSPEC_CHANGE="<name>"

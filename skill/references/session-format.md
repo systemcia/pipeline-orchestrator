@@ -72,7 +72,7 @@
       "snapshot_ref": "git tag 名 或空",
       "log_file": "logs/001-t1-后端API.md 或空",
       "corrections": 0,
-      "openspec_task_id": "与 OpenSpec tasks.md 行首 N.M 对应，或 null",
+      "openspec_task_id": "与 OpenSpec tasks.md 行首 N.M[.K] 对应，或 null",
       "owns_globs": ["src/foo/**", "可选：本 task 独占的路径 glob，用于并行判定"]
     }
   ],

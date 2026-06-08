@@ -25,17 +25,18 @@
 
 **触发条件**：本批将并行 spawn ≥2 个 task。串行批整步跳过。
 
-a) **输入**：读取 `$DIR/design-brief.md`。文件不存在或正文无可判定段落 → **跳过**（`O12 skip: no design-brief`）
+a) **输入**：读取 `$DIR/design-brief.md`（增强编排模式）。文件不存在时：
+   - 检查 `$DIR/session.md` 的「关键约束和决策」段是否含设计决策内容（OpenSpec 模式下 Phase 2A 已注入 design.md 摘要）
+   - 有内容 → 以该段作为接口判定依据
+   - 无内容 → **跳过**（`O12 skip: no design context`）
 
-b) **判定**：`design-brief.md` 是否明示本批并行 task 之间的接口交互依赖（A 消费 B 的包/函数/类型/端点、共享契约、跨 task 模块边界与调用方向等）
+b) **判定**：设计上下文（`design-brief.md` 或 session.md 关键约束段）是否明示本批并行 task 之间的接口交互依赖（A 消费 B 的包/函数/类型/端点、共享契约、跨 task 模块边界与调用方向等）
 
 c) **否** → 跳过，不在 spawn prompt 中追加契约块
 
-d) **是** → 主 Agent 内联生成接口契约摘要（≤800 字、结构化），禁止臆造 brief 中未出现的接口
+d) **是** → 主 Agent 内联生成接口契约摘要（≤800 字、结构化），禁止臆造设计上下文中未出现的接口
 
 e) **注入**：为本批每一个并行 task 的 spawn prompt 追加 `## 并行批次接口契约（摘要）`
-
-> OpenSpec 模式：无 `design-brief.md` 时按 (a) 跳过，不将 OpenSpec 制品强行替代。
 
 ### Step 2: spawn
 

@@ -6,7 +6,7 @@
 [Shell] openspec instructions apply --change "<name>" --json
 ```
 
-读返回的 tasks，转换为 `$O init` 的 JSON 格式（保留 id/name/description/depends_on；**每项增加 `openspec_task_id`**，与 `openspec/changes/<name>/tasks.md` 中行首 **N.M** 一致，供 `$O validate` 漂移比对）：
+读返回的 tasks，转换为 `$O init` 的 JSON 格式（保留 id/name/description/depends_on；**每项增加 `openspec_task_id`**，与 `openspec/changes/<name>/tasks.md` 中行首 **N.M[.K]** 一致，供 `$O validate` 漂移比对）：
 
 ```
 [Shell] export PIPELINE_OPENSPEC_CHANGE="<name>"
@@ -15,6 +15,16 @@
 ```
 
 （`PIPELINE_*` 亦可省略：则不在 state 中记录 OpenSpec 路径，validate 仅做数据完整性检查。）
+
+**OpenSpec 设计上下文提取**（MUST，紧接 init 之后）：
+
+从 `openspec instructions apply` 返回的 `contextFiles.design` 路径读取 `design.md`，提取核心设计决策摘要（≤ 1500 字）作为 `OPENSPEC_DESIGN_SUMMARY`：
+```
+[Shell] DESIGN_PATH=$(cat <<< '<contextFiles.design 路径>')
+[Shell] [ -f "$DESIGN_PATH" ] && OPENSPEC_DESIGN_SUMMARY=$(head -80 "$DESIGN_PATH") || OPENSPEC_DESIGN_SUMMARY=""
+```
+
+此摘要将在下方「通用」段的 `$O update-session "关键约束和决策"` 中与 `EXPLORE_SUMMARY` 合并注入。
 
 ## 2B（增强编排模式）
 
@@ -92,10 +102,11 @@ ANALYSIS_TRACE+="
 
 ```
 [Shell] $O update-session $DIR "用户原始需求" "<需求原文>" replace
-[Shell] $O update-session $DIR "关键约束和决策" "<EXPLORE_SUMMARY（如有）+ 约束列表>" replace
+[Shell] $O update-session $DIR "关键约束和决策" "<EXPLORE_SUMMARY（如有）+ OPENSPEC_DESIGN_SUMMARY（OpenSpec 模式时）+ 约束列表>" replace
 ```
 
 > `EXPLORE_SUMMARY` 来自 Phase 1c 探索产出（无探索时为空，不影响注入）。
+> `OPENSPEC_DESIGN_SUMMARY` 来自 Phase 2A 的 design.md 摘要提取（增强编排模式时为空）。
 
 管理台可用时：
 ```

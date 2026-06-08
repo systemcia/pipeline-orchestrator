@@ -99,8 +99,8 @@ SESSIONS_ROOT = Path(
 )
 
 
-# OpenSpec tasks.md 中行级 checkbox 任务 ID（如 1.1、2.3）
-_OPENSPEC_TASK_LINE = re.compile(r"^\s*-\s+\[[ xX]\]\s+(\d+\.\d+)\b")
+# OpenSpec tasks.md 中行级 checkbox 任务 ID（支持 N.M 和 N.M.K 格式，如 1.1、2.3.1）
+_OPENSPEC_TASK_LINE = re.compile(r"^\s*-\s+\[[ xX]\]\s+(\d+(?:\.\d+)+)\b")
 
 
 
@@ -774,7 +774,7 @@ def cmd_status(args):
 
 
 def _parse_openspec_task_ids_from_md(path: Path) -> set[str]:
-    """从 OpenSpec change 的 tasks.md 解析 `- [ ] N.M` / `- [x] N.M` 任务 ID 集合。"""
+    """从 OpenSpec change 的 tasks.md 解析 `- [ ] N.M[.K]` 任务 ID 集合。"""
     if not path.is_file():
         return set()
     ids: set[str] = set()
@@ -782,10 +782,19 @@ def _parse_openspec_task_ids_from_md(path: Path) -> set[str]:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return set()
+    has_checkbox = False
     for line in text.splitlines():
+        if re.match(r"^\s*-\s+\[[ xX]\]", line):
+            has_checkbox = True
         m = _OPENSPEC_TASK_LINE.match(line)
         if m:
             ids.add(m.group(1))
+    if has_checkbox and not ids:
+        print(
+            f"WARN: {path} 含 checkbox 行但未解析到 N.M 格式任务 ID，"
+            "请确认 tasks.md 格式为 '- [ ] 1.1 描述'",
+            file=sys.stderr,
+        )
     return ids
 
 
