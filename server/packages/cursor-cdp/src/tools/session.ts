@@ -277,9 +277,10 @@ async function listWindowsToolInner(
       continue;
     }
 
-    const type: WindowType = target.url.includes("agentic")
-      ? "Agent"
-      : "Editor";
+    const type: WindowType =
+      target.url.includes("agentic") || /cursor\s*agents?/i.test(target.title)
+        ? "Agent"
+        : "Editor";
     windows.push({
       idx,
       type,
@@ -313,16 +314,19 @@ function pickBestWindowMatch(
   windows: WindowInfo[],
   query: string,
 ): WindowInfo | null {
-  const matches = windows.filter((w) => matchesProjectQuery(w, query));
-  if (matches.length === 0) {
-    return null;
+  // 优先使用 Agent 窗口（独立运行，不受用户操作干扰）
+  const agentWindow = windows.find((w) => w.type === "Agent");
+  if (agentWindow) {
+    return agentWindow;
   }
-  return (
-    matches.find((w) => w.type === "Agent") ??
-    matches.find((w) => w.type === "Editor") ??
-    matches[0] ??
-    null
-  );
+  // 无 Agent 窗口时，按 project 匹配 Editor 窗口
+  if (query) {
+    const matches = windows.filter((w) => matchesProjectQuery(w, query));
+    if (matches.length > 0) {
+      return matches[0] ?? null;
+    }
+  }
+  return windows[0] ?? null;
 }
 
 async function getTargetIdForWindowIdx(
@@ -496,17 +500,25 @@ async function waitForComposerInput(
   manager: ConnectionManager,
   port?: number,
 ): Promise<boolean> {
+  const selectors = [
+    SELECTORS.composer.input,
+    SELECTORS.composer.inputFallback,
+    SELECTORS.composer.inputAgent,
+  ].map(s => JSON.stringify(s)).join(",");
   const deadline = Date.now() + NEW_CHAT_WAIT_MS;
   while (Date.now() < deadline) {
     const ready = await manager.evaluate(
       `(() => {
-        const el = document.querySelector(${JSON.stringify(SELECTORS.composer.input)});
-        if (!el) return false;
-        if (el.offsetParent === null) return false;
-        return (
-          el.isContentEditable === true ||
-          el.getAttribute("contenteditable") === "true"
-        );
+        const sels = [${selectors}];
+        for (const sel of sels) {
+          const el = document.querySelector(sel);
+          if (!el) continue;
+          if (el.offsetParent === null) continue;
+          if (el.isContentEditable === true || el.getAttribute("contenteditable") === "true") {
+            return true;
+          }
+        }
+        return false;
       })()`,
       port,
     );

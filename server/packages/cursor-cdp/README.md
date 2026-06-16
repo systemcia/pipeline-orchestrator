@@ -18,12 +18,12 @@ npm run build
 
 ### 2. 开启 Cursor CDP 调试端口
 
-Cursor 需以 `--remote-debugging-port` 启动后，MCP Server 才能连接。本项目默认端口 **9226**（可在 `cursor-cdp.config.json` 中修改）。
+Cursor 需以 `--remote-debugging-port` 启动后，MCP Server 才能连接。本项目默认端口 **12678**（可在 `cursor-cdp.config.json` 中修改）。
 
 启动后验证：
 
 ```bash
-curl http://127.0.0.1:9226/json
+curl http://127.0.0.1:12678/json
 # 期望返回 JSON 数组，含 page target 列表
 ```
 
@@ -32,7 +32,7 @@ curl http://127.0.0.1:9226/json
 **方式 A：`~/.cursor-flags`（推荐）**
 
 ```bash
-echo '--remote-debugging-port=9226' > ~/.cursor-flags
+echo '--remote-debugging-port=12678' > ~/.cursor-flags
 ```
 
 完全退出 Cursor（`Cmd+Q`），重新打开。
@@ -40,12 +40,12 @@ echo '--remote-debugging-port=9226' > ~/.cursor-flags
 **方式 B：命令行启动**
 
 ```bash
-open -a Cursor --args --remote-debugging-port=9226
+open -a Cursor --args --remote-debugging-port=12678
 ```
 
 **方式 C：修改 Info.plist**
 
-编辑 `/Applications/Cursor.app/Contents/Info.plist`，在 `LSEnvironment` 或启动参数相关字段追加 `--remote-debugging-port=9226`。App 升级后可能覆盖，不推荐长期使用。
+编辑 `/Applications/Cursor.app/Contents/Info.plist`，在 `LSEnvironment` 或启动参数相关字段追加 `--remote-debugging-port=12678`。App 升级后可能覆盖，不推荐长期使用。
 
 #### Linux / WSL2
 
@@ -54,20 +54,20 @@ open -a Cursor --args --remote-debugging-port=9226
 编辑 `~/.local/share/applications/cursor.desktop`（或系统级 `/usr/share/applications/cursor.desktop`），修改 `Exec` 行：
 
 ```ini
-Exec=/usr/bin/cursor --remote-debugging-port=9226 %F
+Exec=/usr/bin/cursor --remote-debugging-port=12678 %F
 ```
 
 **方式 B：Shell alias**
 
 ```bash
 # ~/.bashrc 或 ~/.zshrc
-alias cursor='cursor --remote-debugging-port=9226'
+alias cursor='cursor --remote-debugging-port=12678'
 ```
 
 **方式 C：直接命令行**
 
 ```bash
-cursor --remote-debugging-port=9226
+cursor --remote-debugging-port=12678
 ```
 
 #### Windows
@@ -76,12 +76,12 @@ cursor --remote-debugging-port=9226
 2. 在「目标」字段末尾追加参数（注意与路径之间有空格）：
 
 ```
-"C:\Users\<you>\AppData\Local\Programs\cursor\Cursor.exe" --remote-debugging-port=9226
+"C:\Users\<you>\AppData\Local\Programs\cursor\Cursor.exe" --remote-debugging-port=12678
 ```
 
 3. 通过该快捷方式启动 Cursor（任务栏固定项需重新固定）
 
-> **注意**：仅关闭窗口不会释放 CDP 端口；修改启动参数后须完全退出 Cursor 再重启。多实例并行时，每个实例使用不同端口（如 9226、9227）。
+> **注意**：仅关闭窗口不会释放 CDP 端口；修改启动参数后须完全退出 Cursor 再重启。多实例并行时，每个实例使用不同端口（如 12678、9227）。
 
 ### 3. 注册 MCP Server
 
@@ -174,7 +174,7 @@ node dist/index.js --transport=http --port=18099
 | `raw_send` | 发送 prompt，不等待完成 | `prompt`, `port?` |
 | `run_skill` | 完整编排：切项目 → 发指令 → 等待完成 → 提取结果 | `project`, `prompt`, `skill?`, `model?`, `timeout?`, `screenshot?`, `attachments?`, `port?` |
 
-所有 tool 的 `port` 参数可选，省略时使用配置文件中的 `default_port`（默认 9226）。
+所有 tool 的 `port` 参数可选，省略时使用配置文件中的 `default_port`（默认 12678）。
 
 `run_skill` 是核心 tool，典型用法：
 
@@ -203,7 +203,7 @@ node dist/index.js --transport=http --port=18099
 
 ```json
 {
-  "default_port": 9226,
+  "default_port": 12678,
   "cdp_host": "localhost",
   "default_model": "opus",
   "default_timeout": 300,
@@ -213,7 +213,7 @@ node dist/index.js --transport=http --port=18099
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `default_port` | number | `9226` | CDP 调试端口 |
+| `default_port` | number | `12678` | CDP 调试端口 |
 | `cdp_host` | string | `localhost` | CDP 主机地址；WSL NAT 模式下自动探测 Windows 主机 IP |
 | `default_model` | string | — | `run_skill` 未指定 model 时的默认模型（模糊匹配） |
 | `default_timeout` | number | `300` | `run_skill` 默认超时秒数（最大 1800） |
@@ -273,14 +273,14 @@ CDP 端口仅绑定 `localhost`，无认证机制，**禁止直接暴露公网**
 在本地执行：
 
 ```bash
-ssh -N -L 9226:127.0.0.1:9226 user@remote-host
+ssh -N -L 12678:127.0.0.1:12678 user@remote-host
 ```
 
-本地 MCP Server 连接 `localhost:9226` 即等价于操控远程 Cursor。多实例时按需映射多个端口：
+本地 MCP Server 连接 `localhost:12678` 即等价于操控远程 Cursor。多实例时按需映射多个端口：
 
 ```bash
 ssh -N \
-  -L 9226:127.0.0.1:9226 \
+  -L 12678:127.0.0.1:12678 \
   -L 9227:127.0.0.1:9227 \
   user@remote-host
 ```
@@ -312,7 +312,7 @@ ssh -N -R 18099:127.0.0.1:18099 user@ci-host
 
 ### 网络连通
 
-Cursor 的 CDP 端口（9226）绑定在 Windows 的 `localhost`。从 WSL 中连接取决于 WSL2 网络模式：
+Cursor 的 CDP 端口（12678）绑定在 Windows 的 `localhost`。从 WSL 中连接取决于 WSL2 网络模式：
 
 | 模式 | 版本要求 | `cdp_host` 设置 |
 |------|----------|-----------------|
@@ -332,7 +332,7 @@ echo '{"cdp_host": "172.25.64.1"}' > ~/.cursor-cdp/config.json
 验证连通性：
 
 ```bash
-curl http://${CURSOR_CDP_HOST:-localhost}:9226/json
+curl http://${CURSOR_CDP_HOST:-localhost}:12678/json
 ```
 
 ### MCP 注册（wsl.exe 桥接）
@@ -388,7 +388,7 @@ server/packages/cursor-cdp/
 
 | 现象 | 排查 |
 |------|------|
-| `connected: false` | 确认 Cursor 以 `--remote-debugging-port=9226` 启动，`curl http://127.0.0.1:9226/json` 可达 |
+| `connected: false` | 确认 Cursor 以 `--remote-debugging-port=12678` 启动，`curl http://127.0.0.1:12678/json` 可达 |
 | MCP 未连接 | 检查 `mcp.json` 中 `args`/`cwd` 路径、`npm run build` 是否已执行 |
 | `run_skill` 超时 | 增大 `timeout`（最大 1800）；检查 Cursor 是否弹出 AskQuestion（返回 `blocked`） |
 | 切项目失败 | 调用 `list_windows` 确认 `project` 名称与窗口标题一致 |

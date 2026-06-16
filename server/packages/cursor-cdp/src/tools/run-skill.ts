@@ -6,6 +6,7 @@ import { CompletionDetector } from "../completion.js";
 import { ConnectionManager } from "../connection.js";
 import { loadConfig } from "../config.js";
 import { extractResult } from "../extractor.js";
+import { logger } from "../logger.js";
 import { SELECTORS } from "../selectors.js";
 import type {
   Attachment,
@@ -296,9 +297,21 @@ async function sendPromptAndWait(
   const postSendRead = await readTool(manager, { ...portOpts(port) } as ReadInput);
   const postSendBaseline = postSendRead.last_message;
 
+  // Extract a unique fragment from the prompt for tab-switch detection
+  const promptFingerprint = prompt.substring(0, Math.min(80, prompt.length));
+
   const detector = new CompletionDetector(manager);
   const contentPollFn = async () => {
     const r = await readTool(manager, { ...portOpts(port) } as ReadInput);
+    // Tab switch: 记录但不阻断 content-based detection，返回 last_message 让 stable 计数器工作
+    if (r.conversation && !r.conversation.includes(promptFingerprint)) {
+      // 如果 last_message 有内容且不是 prompt 本身，仍可用于 stable 检测
+      if (r.last_message && r.last_message !== postSendBaseline &&
+          r.last_message !== prompt && !prompt.startsWith(r.last_message)) {
+        return r.last_message;
+      }
+      return postSendBaseline;
+    }
     const msg = r.last_message;
     if (!msg) return postSendBaseline;
     if (msg === prompt || prompt.startsWith(msg) || msg.startsWith(prompt)) {
@@ -313,9 +326,33 @@ async function sendPromptAndWait(
     baselineMessage: postSendBaseline,
   });
 
-  const readResult = await readTool(manager, {
-    ...portOpts(port),
-  } as ReadInput);
+  // Allow DOM to finish rendering after completion signal
+  await sleep(2000);
+  // Final read with retry: Agent window DOM may lag behind completion signal
+  let readResult = await readTool(manager, { ...portOpts(port) } as ReadInput);
+  if (!readResult.conversation && completion.signal !== "timeout") {
+    for (let readRetry = 0; readRetry < 3; readRetry++) {
+      await sleep(2000);
+      readResult = await readTool(manager, { ...portOpts(port) } as ReadInput);
+      if (readResult.conversation) {
+        logger.info("run_skill", `read recovered after ${readRetry + 1} retries`);
+        break;
+      }
+    }
+  }
+  // Tab switch 检查：只在非 content-based 完成时执行（content-based 说明 poll 阶段已确认内容有效）
+  const isContentBased = completion.signal === "status_clear" || completion.signal === "dom_ready";
+  if (!isContentBased && readResult.conversation && !readResult.conversation.includes(promptFingerprint)) {
+    logger.info("run_skill", "tab switch detected on final read, waiting for correct tab...");
+    for (let retry = 0; retry < 10; retry++) {
+      await sleep(3000);
+      readResult = await readTool(manager, { ...portOpts(port) } as ReadInput);
+      if (readResult.conversation && readResult.conversation.includes(promptFingerprint)) {
+        logger.info("run_skill", "correct tab recovered after " + (retry + 1) + " retries");
+        break;
+      }
+    }
+  }
   let response = extractResult(readResult.conversation);
   if (!response && readResult.last_message && readResult.last_message !== postSendBaseline) {
     response = readResult.last_message;

@@ -4,7 +4,7 @@
   "_comment_register_project": "项目级（推荐）：创建或编辑 <你的项目>/.cursor/mcp.json，将 mcpServers 内容合并进去",
   "_comment_register_global": "全局：创建或编辑 ~/.cursor/mcp.json，将 mcpServers 内容合并进去",
   "_comment_path": "将 args 与 cwd 中的 /ABSOLUTE/PATH/TO/... 替换为本机 cursor-cdp 包目录的绝对路径",
-  "_comment_cursor": "启动 Cursor 时开启 CDP 调试端口：cursor --remote-debugging-port=9226（默认端口，可在 cursor-cdp.config.json 中修改）",
+  "_comment_cursor": "启动 Cursor 时开启 CDP 调试端口：cursor --remote-debugging-port=12678（默认端口，可在 cursor-cdp.config.json 中修改）",
   "_comment_env": "env 可选。CURSOR_CDP_CONFIG 用于指定自定义配置文件；不设置时自动查找包内 cursor-cdp.config.json 或 ~/.cursor-cdp/config.json",
   "_comment_verify": "注册后重启 Cursor，在 Settings → MCP 中确认 cursor-cdp 状态为 connected，或调用 status tool 验证",
   "mcpServers": {

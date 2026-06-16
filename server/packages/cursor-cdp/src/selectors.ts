@@ -7,13 +7,16 @@ export const SELECTORS = {
     input:
       '#workbench\\.parts\\.auxiliarybar [contenteditable="true"][role="textbox"]',
     inputFallback: '.aislash-editor-input[contenteditable="true"]',
+    inputAgent: '.ui-prompt-input-editor__input[contenteditable="true"]',
     // 不含 :not([disabled])，以便在生成中也能定位 Send 按钮并检测状态转换
     sendButton:
       '.composer-bar button .codicon-arrow-up, .composer-bar button .codicon-send',
     sendButtonFallback: 'button[aria-label*="Send" i]',
+    sendButtonAgent: '.ui-prompt-input-submit-button',
   },
   conversation: {
     container: '#workbench\\.parts\\.auxiliarybar',
+    containerAgent: '.agent-panel',
     message: '[data-flat-index]',
     lastMessage: '#workbench\\.parts\\.auxiliarybar [data-flat-index]:last-of-type',
   },
@@ -36,6 +39,7 @@ export const SELECTORS = {
   },
   panel: {
     root: '#workbench\\.parts\\.auxiliarybar',
+    rootAgent: '.agent-panel',
   },
 } as const;
 

@@ -7,9 +7,10 @@ import { isMacOS } from "../utils.js";
 function buildFindAndFocusExpression(): string {
   const primary = JSON.stringify(SELECTORS.composer.input);
   const fallback = JSON.stringify(SELECTORS.composer.inputFallback);
+  const agent = JSON.stringify(SELECTORS.composer.inputAgent);
 
   return `(() => {
-    const selectors = [${primary}, ${fallback}];
+    const selectors = [${primary}, ${fallback}, ${agent}];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el && el.offsetParent !== null) {

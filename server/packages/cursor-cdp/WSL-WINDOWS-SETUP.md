@@ -10,7 +10,7 @@
 ```
 ┌─────────────────────────────────────────────────┐
 │  Windows                                        │
-│  ┌────────────┐     CDP (localhost:9226)         │
+│  ┌────────────┐     CDP (localhost:12678)         │
 │  │  Cursor IDE │◄────────────────────────────┐   │
 │  └────────────┘                              │   │
 │                                              │   │
@@ -40,7 +40,7 @@
 
 ```
 变量名：ELECTRON_EXTRA_LAUNCH_ARGS
-变量值：--remote-debugging-port=9226 --remote-debugging-address=0.0.0.0
+变量值：--remote-debugging-port=12678 --remote-debugging-address=0.0.0.0
 存储位置：HKCU\Environment（用户级注册表）
 ```
 
@@ -48,7 +48,7 @@
 ```powershell
 [System.Environment]::SetEnvironmentVariable(
     'ELECTRON_EXTRA_LAUNCH_ARGS',
-    '--remote-debugging-port=9226 --remote-debugging-address=0.0.0.0',
+    '--remote-debugging-port=12678 --remote-debugging-address=0.0.0.0',
     'User'
 )
 ```
@@ -56,7 +56,7 @@
 **验证命令**：
 ```powershell
 [System.Environment]::GetEnvironmentVariable('ELECTRON_EXTRA_LAUNCH_ARGS', 'User')
-# 期望输出：--remote-debugging-port=9226 --remote-debugging-address=0.0.0.0
+# 期望输出：--remote-debugging-port=12678 --remote-debugging-address=0.0.0.0
 ```
 
 **注意**：设置后需广播 WM_SETTINGCHANGE 或注销重新登录，Explorer 才能感知新环境变量。
@@ -137,14 +137,14 @@ $r = [UIntPtr]::Zero
 
 **路径**：`%APPDATA%\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Cursor.lnk`
 
-**参数**：`--remote-debugging-port=9226 --remote-debugging-address=0.0.0.0`
+**参数**：`--remote-debugging-port=12678 --remote-debugging-address=0.0.0.0`
 
 **设置命令**（PowerShell）：
 ```powershell
 $lnkPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Cursor.lnk"
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($lnkPath)
-$shortcut.Arguments = "--remote-debugging-port=9226 --remote-debugging-address=0.0.0.0"
+$shortcut.Arguments = "--remote-debugging-port=12678 --remote-debugging-address=0.0.0.0"
 $shortcut.Save()
 ```
 
@@ -197,7 +197,7 @@ echo "=== 1. 设置环境变量 ==="
 powershell.exe -NoProfile -Command '
 [System.Environment]::SetEnvironmentVariable(
     "ELECTRON_EXTRA_LAUNCH_ARGS",
-    "--remote-debugging-port=9226 --remote-debugging-address=0.0.0.0",
+    "--remote-debugging-port=12678 --remote-debugging-address=0.0.0.0",
     "User"
 )
 Write-Output "ENV SET: $([System.Environment]::GetEnvironmentVariable(\"ELECTRON_EXTRA_LAUNCH_ARGS\", \"User\"))"
@@ -220,7 +220,7 @@ powershell.exe -NoProfile -Command '
 $p = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Cursor.lnk"
 if (Test-Path $p) {
     $s = (New-Object -COM WScript.Shell).CreateShortcut($p)
-    $s.Arguments = "--remote-debugging-port=9226 --remote-debugging-address=0.0.0.0"
+    $s.Arguments = "--remote-debugging-port=12678 --remote-debugging-address=0.0.0.0"
     $s.Save()
     Write-Output "Shortcut updated: $($s.Arguments)"
 } else {
@@ -263,10 +263,10 @@ echo "请完全关闭 Cursor 后重新打开，CDP 调试端口和 MCP 工具将
 
 ```bash
 # 1. 检查 CDP 端口是否监听
-powershell.exe -NoProfile -Command 'Get-NetTCPConnection -LocalPort 9226 -ErrorAction SilentlyContinue | Format-Table LocalAddress,LocalPort,State'
+powershell.exe -NoProfile -Command 'Get-NetTCPConnection -LocalPort 12678 -ErrorAction SilentlyContinue | Format-Table LocalAddress,LocalPort,State'
 
 # 2. 检查 CDP 是否可达（从 Windows 侧）
-cmd.exe /c "curl.exe -s http://127.0.0.1:9226/json/version"
+cmd.exe /c "curl.exe -s http://127.0.0.1:12678/json/version"
 
 # 3. MCP 端到端测试
 printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}\n{"jsonrpc":"2.0","method":"notifications/initialized"}\n' | timeout 8 powershell.exe -NoProfile -Command '& "node.exe" "\\wsl$\Ubuntu-20.04\home\go\src\pipeline-orchestrator\server\packages\cursor-cdp\dist\index.js"'

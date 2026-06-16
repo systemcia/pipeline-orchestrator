@@ -6,7 +6,7 @@ TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 TID="e2e-remote-1"
 REMOTE_PROJECT="sre-web"
-REMOTE_PORT=9226
+REMOTE_PORT=12678
 
 # 2. Step 1 PRE-CHECK (模拟)
 echo "--- Step 1: PRE-CHECK ---"

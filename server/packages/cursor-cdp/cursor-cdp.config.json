@@ -1,7 +1,7 @@
 {
-  "default_port": 9226,
-  "cdp_host": "localhost",
-  "default_model": "opus",
+  "default_port": 12678,
+  "cdp_host": "172.24.96.1",
+  "default_model": "Opus 4.6 High",
   "default_timeout": 300,
   "log_dir": "~/.cursor-cdp/logs/"
 }

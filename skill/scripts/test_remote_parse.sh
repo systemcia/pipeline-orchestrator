@@ -56,7 +56,7 @@ tasks = {t["id"]: t for t in state["tasks"]}
 
 expected = {
     "t1": {"type": "local",  "remote_project": None, "remote_port": None, "name": "local task"},
-    "t2": {"type": "remote", "remote_project": "sre-web", "remote_port": 9226, "name": "remote test"},
+    "t2": {"type": "remote", "remote_project": "sre-web", "remote_port": 12678, "name": "remote test"},
     "t3": {"type": "remote", "remote_project": "knight", "remote_port": 9333, "name": "port test"},
     "t4": {"type": "local",  "remote_project": None, "remote_port": None, "name": "no bracket task"},
     "t5": {"type": "remote", "remote_project": "告警平台", "remote_port": 9227, "name": "中文任务"},

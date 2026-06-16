@@ -153,7 +153,7 @@ def cmd_init(args):
         if remote_match:
             task_type = "remote"
             remote_project = remote_match.group(1)
-            remote_port = int(remote_match.group(2)) if remote_match.group(2) else 9226
+            remote_port = int(remote_match.group(2)) if remote_match.group(2) else 12678
             name = name[:remote_match.start()].rstrip()
         else:
             task_type = "local"

@@ -5,7 +5,7 @@
 
 ## 背景
 
-Cursor 基于 Electron + VS Code 架构。启动时加 `--remote-debugging-port={port}`（本项目默认 **9226**）后，所有 `BrowserWindow` 共享同一 CDP 端口，每个顶层窗口对应一个独立的 `page` target。
+Cursor 基于 Electron + VS Code 架构。启动时加 `--remote-debugging-port={port}`（本项目默认 **12678**）后，所有 `BrowserWindow` 共享同一 CDP 端口，每个顶层窗口对应一个独立的 `page` target。
 
 **设计决策**（见 `openspec/changes/cursor-remote-dispatch/design.md` D1 闭合问题 #1）：
 
@@ -31,12 +31,12 @@ Cursor 基于 Electron + VS Code 架构。启动时加 `--remote-debugging-port=
 ```json
 {
   "description": "",
-  "devtoolsFrontendUrl": "/devtools/inspector.html?ws=127.0.0.1:9226/devtools/page/ABC123...",
+  "devtoolsFrontendUrl": "/devtools/inspector.html?ws=127.0.0.1:12678/devtools/page/ABC123...",
   "id": "ABC123DEF456...",
   "title": "index.tsx - pipeline-orchestrator [WSL: ubuntu] - Cursor",
   "type": "page",
   "url": "vscode-file://vscode-app/home/user/.cursor/.../out/vs/code/electron-sandbox/workbench/workbench.html",
-  "webSocketDebuggerUrl": "ws://127.0.0.1:9226/devtools/page/ABC123..."
+  "webSocketDebuggerUrl": "ws://127.0.0.1:12678/devtools/page/ABC123..."
 }
 ```
 
@@ -95,21 +95,21 @@ Cursor 基于 Electron + VS Code 架构。启动时加 `--remote-debugging-port=
     "type": "page",
     "title": "index.tsx - pipeline-orchestrator [WSL: ubuntu] - Cursor",
     "url": "vscode-file://vscode-app/.../vs/code/electron-sandbox/workbench/workbench.html",
-    "webSocketDebuggerUrl": "ws://127.0.0.1:9226/devtools/page/page-editor-001"
+    "webSocketDebuggerUrl": "ws://127.0.0.1:12678/devtools/page/page-editor-001"
   },
   {
     "id": "page-agent-002",
     "type": "page",
     "title": "Cursor Agents",
     "url": "vscode-file://vscode-app/.../vs/code/agentic/electron-browser/workbench/workbench.html",
-    "webSocketDebuggerUrl": "ws://127.0.0.1:9226/devtools/page/page-agent-002"
+    "webSocketDebuggerUrl": "ws://127.0.0.1:12678/devtools/page/page-agent-002"
   },
   {
     "id": "iframe-003",
     "type": "iframe",
     "title": "",
     "url": "vscode-webview://...",
-    "webSocketDebuggerUrl": "ws://127.0.0.1:9226/devtools/page/iframe-003"
+    "webSocketDebuggerUrl": "ws://127.0.0.1:12678/devtools/page/iframe-003"
   }
 ]
 ```
@@ -283,7 +283,7 @@ fetchTargets(port)
 
 ### 4.3 多实例 / 多端口
 
-每个 Cursor 进程使用独立 `--remote-debugging-port`（如 9226、9227）。`list_windows` 按 `port` 参数查询对应实例，不跨端口合并。
+每个 Cursor 进程使用独立 `--remote-debugging-port`（如 12678、9227）。`list_windows` 按 `port` 参数查询对应实例，不跨端口合并。
 
 ### 4.4 窗口生命周期
 
@@ -397,8 +397,8 @@ function pickWindow(windows: CursorWindow[], project: string): CursorWindow | nu
 
 本地验证步骤（任务 10.1 前置）：
 
-1. 分别以默认方式和 `--remote-debugging-port=9226` 启动 Cursor
-2. 仅开 Editor：`curl -s http://127.0.0.1:9226/json | jq '.[] | select(.type=="page") | {title,url}'`
+1. 分别以默认方式和 `--remote-debugging-port=12678` 启动 Cursor
+2. 仅开 Editor：`curl -s http://127.0.0.1:12678/json | jq '.[] | select(.type=="page") | {title,url}'`
 3. `Cmd+Shift+P → Open Agents Window`，重复 curl，确认出现 `agentic` URL 的 page target
 4. 对比两种窗口的 `title` 差异，记录实际格式
 5. 连接各 target，执行 §3.1 evaluate 脚本，核对 `project` 与文件系统路径一致

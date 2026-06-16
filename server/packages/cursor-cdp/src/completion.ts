@@ -161,8 +161,10 @@ function toLogSignals(signals: PollSignals): Record<string, boolean> {
 
 export type ContentPollFn = () => Promise<string>;
 
-const CONTENT_STABLE_COUNT = 2;
-const MIN_CONTENT_DELAY_MS = 3_000;
+const CONTENT_STABLE_COUNT = 5;
+const MIN_CONTENT_DELAY_MS = 5_000;
+// 当 send button 不存在时（Agent 独立窗口），status_clear 的确认更宽松
+const STATUS_CLEAR_NO_SEND_CONFIRM_COUNT = 2;
 
 export class CompletionDetector {
   private readonly pollExpression = buildPollExpression();
@@ -188,6 +190,7 @@ export class CompletionDetector {
     let contentStableCount = 0;
     const useContentPoll = options.contentPollFn !== undefined && options.baselineMessage !== undefined;
     const contentCheckStart = startTime + MIN_CONTENT_DELAY_MS;
+    let statusClearNoSendCount = 0;
 
     while (Date.now() < deadline) {
       iteration += 1;
@@ -227,15 +230,32 @@ export class CompletionDetector {
           return result;
         }
       } else if (wasBusy && !signals.status_active) {
-        const confirmed = await this.confirmSignal("status_clear", port, startTime);
-        if (confirmed) {
-          const result: CompletionResult = {
-            signal: "status_clear",
-            elapsed_ms: Date.now() - startTime,
-          };
-          logFinalResult(result);
-          return result;
+        if (!signals.send_found) {
+          // Agent 独立窗口：send button 不存在，用连续计数确认避免瞬态误判
+          statusClearNoSendCount += 1;
+          if (statusClearNoSendCount >= STATUS_CLEAR_NO_SEND_CONFIRM_COUNT) {
+            logSignalTriggered("status_clear", Date.now() - startTime);
+            const result: CompletionResult = {
+              signal: "status_clear",
+              elapsed_ms: Date.now() - startTime,
+            };
+            logger.info("completion", "status_clear confirmed via consecutive polls (no send button)");
+            logFinalResult(result);
+            return result;
+          }
+        } else {
+          const confirmed = await this.confirmSignal("status_clear", port, startTime);
+          if (confirmed) {
+            const result: CompletionResult = {
+              signal: "status_clear",
+              elapsed_ms: Date.now() - startTime,
+            };
+            logFinalResult(result);
+            return result;
+          }
         }
+      } else {
+        statusClearNoSendCount = 0;
       }
 
       if (useContentPoll && Date.now() >= contentCheckStart) {

@@ -5,7 +5,7 @@ import path from "node:path";
 import type { CursorCdpConfig } from "./types.js";
 
 const DEFAULT_CONFIG: CursorCdpConfig = {
-  default_port: 9226,
+  default_port: 12678,
   cdp_host: "localhost",
   default_timeout: 300,
   session_timeout: 3600,

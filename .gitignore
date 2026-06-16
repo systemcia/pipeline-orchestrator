@@ -39,8 +39,11 @@ Thumbs.db
 .env.local
 .env.*.local
 
-# Compiled binary (legacy Go server)
+# Compiled binaries
 server.bak/po-server
+
+services/
+skill/templates
 
 # Logs
 *.log

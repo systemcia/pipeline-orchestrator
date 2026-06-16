@@ -5,10 +5,19 @@ import { withToolLog } from "../tool-logger.js";
 
 function buildReadExpression(): string {
   const containerSel = JSON.stringify(SELECTORS.conversation.container);
+  const containerAgentSel = JSON.stringify(SELECTORS.conversation.containerAgent);
   const messageSel = JSON.stringify(SELECTORS.conversation.message);
 
   return `(() => {
-    const container = document.querySelector(${containerSel});
+    let container = document.querySelector(${containerSel});
+    let isAgentPanel = false;
+    if (!container || !container.querySelector(${messageSel})) {
+      const agentContainer = document.querySelector(${containerAgentSel});
+      if (agentContainer && agentContainer.querySelector(${messageSel})) {
+        container = agentContainer;
+        isAgentPanel = true;
+      }
+    }
     if (!container) {
       return { conversation: "", last_message: "", message_count: 0 };
     }
@@ -27,15 +36,17 @@ function buildReadExpression(): string {
         )
         .forEach((el) => el.remove());
 
-      clone
-        .querySelectorAll(
-          'details, [class*="collapse"], [class*="collapsible"], [class*="folded"]',
-        )
-        .forEach((el) => el.remove());
+      if (!isAgentPanel) {
+        clone
+          .querySelectorAll(
+            'details, [class*="collapse"], [class*="collapsible"], [class*="folded"]',
+          )
+          .forEach((el) => el.remove());
+      }
 
       clone
         .querySelectorAll(
-          '.composer-bar, .loading-indicator-v3, .make-shine, .composer-questionnaire-toolbar, button, [contenteditable="true"]',
+          '.composer-bar, .loading-indicator-v3, .make-shine, .composer-questionnaire-toolbar, button, [contenteditable="true"], [class*="thinking"], [class*="thought"], [class*="exploring"]',
         )
         .forEach((el) => el.remove());
 

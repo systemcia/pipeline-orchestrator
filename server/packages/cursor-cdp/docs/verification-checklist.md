@@ -23,16 +23,16 @@ npm run build
 ### 1.2 以 CDP 调试端口启动 Cursor
 
 ```bash
-cursor --remote-debugging-port=9226
+cursor --remote-debugging-port=12678
 ```
 
-> 默认端口为 `9226`，与 `cursor-cdp.config.json` 中 `default_port` 一致。  
+> 默认端口为 `12678`，与 `cursor-cdp.config.json` 中 `default_port` 一致。  
 > 若使用其他端口，后续所有 tool 调用需传入 `port` 参数。
 
 **快速自检**（可选）：
 
 ```bash
-curl -s http://127.0.0.1:9226/json | jq '.[].title'
+curl -s http://127.0.0.1:12678/json | jq '.[].title'
 ```
 
 应返回至少一个 Cursor 窗口标题。
@@ -78,7 +78,7 @@ npm run start:http
 | 已打开项目 | `pipeline-orchestrator`（或任意已知项目名） |
 | 窗口类型 | 同时打开 **Editor** 与 **Agent** 窗口（若有） |
 | Composer | 当前窗口 Chat 面板可见，非全屏遮挡 |
-| 网络 | 本机 `127.0.0.1:9226` 可访问 |
+| 网络 | 本机 `127.0.0.1:12678` 可访问 |
 
 ---
 
@@ -110,7 +110,7 @@ npm run start:http
 或显式指定端口：
 
 ```json
-{ "port": 9226 }
+{ "port": 12678 }
 ```
 
 #### 预期输出（成功）
@@ -149,7 +149,7 @@ npm run start:http
 
 | 现象 | 可能原因 |
 |------|----------|
-| `connected=false` | Cursor 未加 `--remote-debugging-port=9226` |
+| `connected=false` | Cursor 未加 `--remote-debugging-port=12678` |
 | MCP tool 报错 | `npm run build` 未完成或 MCP 未注册 |
 | `project` 为空 | 当前为 Agent 窗口（设计行为）或标题格式未识别 |
 
@@ -429,7 +429,7 @@ read (conversation 含 prompt，message_count >= 1)
 - 日期：
 - 执行人：
 - Cursor 版本：
-- CDP 端口：9226
+- CDP 端口：12678
 - MCP 模式：stdio / http
 
 | 步骤 | 结果 | 备注 |
@@ -927,7 +927,7 @@ read (conversation 含 prompt，message_count >= 1)
 - 日期：
 - 执行人：
 - Cursor 版本：
-- CDP 端口：9226
+- CDP 端口：12678
 
 ### t45 — run_skill 正常路径
 
